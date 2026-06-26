@@ -1,5 +1,6 @@
 package br.com.finalcraft.finalconfig.codec;
 
+import br.com.finalcraft.finalconfig.binding.introspect.FinalConfigModule;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.Module;
@@ -58,6 +59,7 @@ public final class FCMapperProfiles {
         baseReadContract(mapper);
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         mapper.disable(SerializationFeature.WRITE_DURATIONS_AS_TIMESTAMPS);
+        mapper.registerModule(new FinalConfigModule()); // key-naming annotations + enum-by-name
         return mapper;
     }
 
