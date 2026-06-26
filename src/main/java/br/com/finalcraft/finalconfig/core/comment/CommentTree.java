@@ -1,7 +1,10 @@
 package br.com.finalcraft.finalconfig.core.comment;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -10,6 +13,11 @@ import java.util.Map;
  * or set explicitly via {@link #setComment}); {@code seeded=true} means it came from a code-supplied
  * default. The distinction is what lets a code default fill in a comment for a new key without ever
  * overwriting one the user wrote.
+ *
+ * <p>Besides comments, the overlay carries the vertical layout that the data tree cannot: the count of
+ * blank lines kept above each key, and the file's header (above the first key) and footer (below the
+ * last key) comment blocks. All of it is reconciled and re-emitted on save so a round-trip preserves the
+ * file's shape, not just its data.
  *
  * <p>Comment text is stored without the {@code #} prefix; prefixing happens when the document is
  * written.
@@ -21,9 +29,14 @@ public final class CommentTree {
         boolean blockSeeded;
         String side;
         boolean sideSeeded;
+        int blankLinesBefore;
     }
 
     private final Map<String, Entry> byPath = new LinkedHashMap<>();
+
+    /** File header / footer comment blocks (prefix-less lines), or null when absent. */
+    private List<String> header;
+    private List<String> footer;
 
     private Entry entry(final String path) {
         return byPath.computeIfAbsent(path == null ? "" : path, k -> new Entry());
@@ -97,6 +110,35 @@ public final class CommentTree {
         return e != null && e.block != null && !e.blockSeeded;
     }
 
+    // ---- vertical layout (blank lines kept above a key) ----
+
+    public void setBlankLinesBefore(final String path, final int count) {
+        entry(path).blankLinesBefore = Math.max(0, count);
+    }
+
+    public int getBlankLinesBefore(final String path) {
+        final Entry e = byPath.get(path == null ? "" : path);
+        return e == null ? 0 : e.blankLinesBefore;
+    }
+
+    // ---- header / footer ----
+
+    public void setHeader(final List<String> lines) {
+        this.header = (lines == null || lines.isEmpty()) ? null : new ArrayList<>(lines);
+    }
+
+    public List<String> getHeader() {
+        return header == null ? Collections.<String>emptyList() : Collections.unmodifiableList(header);
+    }
+
+    public void setFooter(final List<String> lines) {
+        this.footer = (lines == null || lines.isEmpty()) ? null : new ArrayList<>(lines);
+    }
+
+    public List<String> getFooter() {
+        return footer == null ? Collections.<String>emptyList() : Collections.unmodifiableList(footer);
+    }
+
     // ---- lifecycle ----
 
     /**
@@ -106,6 +148,8 @@ public final class CommentTree {
     public void removeSubtree(final String path) {
         if (path == null || path.isEmpty()) {
             byPath.clear();
+            header = null;
+            footer = null;
             return;
         }
         final String prefix = path + ".";

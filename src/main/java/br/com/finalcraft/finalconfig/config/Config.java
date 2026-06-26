@@ -40,6 +40,13 @@ public class Config {
     private final PathOptions pathOptions;
     private final NodeCoercion coercion;
 
+    /**
+     * The paths that already existed in the tree when this config was loaded — the oracle for "is this
+     * the first time the key is written?". A code-seeded comment fires only for a path NOT in this set,
+     * so a comment the user deleted from the file stays deleted instead of being re-seeded every save.
+     */
+    private final Set<String> loadedPaths;
+
     private transient boolean newDefaultValueToSave = false;
 
     public Config() {
@@ -60,6 +67,8 @@ public class Config {
         this.nodes = JsonNodeFactory.instance;
         this.pathOptions = PathOptions.DEFAULT;
         this.coercion = new NodeCoercion(this.nodes);
+        this.loadedPaths = new LinkedHashSet<>();
+        collectDeep(root, "", this.loadedPaths);
     }
 
     // ==================== escape hatch + internals ====================
@@ -406,6 +415,34 @@ public class Config {
         return comments.getComment(path, type);
     }
 
+    /**
+     * Move a key's data and its own comment + spacing from {@code oldPath} to {@code newPath}, marking
+     * the destination as already persisted so the moved comment is preserved (never re-seeded). This is
+     * the explicit hook for a config migration; reconciliation never infers a rename by itself. The
+     * moved node keeps its full data subtree; comments on descendant paths are not carried over.
+     */
+    public void migrateKey(final String oldPath, final String newPath) {
+        if (Path.isRoot(oldPath) || Path.isRoot(newPath) || oldPath.equals(newPath) || !contains(oldPath)) {
+            return;
+        }
+        final JsonNode node = resolve(oldPath);
+        final String block = comments.getComment(oldPath, CommentType.BLOCK);
+        final String side = comments.getComment(oldPath, CommentType.SIDE);
+        final int blanks = comments.getBlankLinesBefore(oldPath);
+
+        removeValue(oldPath);
+        setValue(newPath, node); // a raw JsonNode passes through coercion unchanged
+        if (block != null) {
+            comments.setComment(newPath, block, CommentType.BLOCK);
+        }
+        if (side != null) {
+            comments.setComment(newPath, side, CommentType.SIDE);
+        }
+        comments.setBlankLinesBefore(newPath, blanks);
+        loadedPaths.remove(oldPath);
+        loadedPaths.add(newPath);
+    }
+
     // ==================== getOrSetDefaultValue (the seeding engine) ====================
 
     public <D> D getOrSetDefaultValue(final String path, final D def) {
@@ -420,10 +457,7 @@ public class Config {
 
     public <D> D getOrSetDefaultValue(final String path, final D def, final String comment) {
         final D value = getOrSetDefaultValue(path, def);
-        if (comment != null && !comments.hasUserComment(path)) {
-            comments.seedComment(path, comment);
-            newDefaultValueToSave = true;
-        }
+        seedCommentIfUnpersisted(path, comment);
         return value;
     }
 
@@ -439,11 +473,20 @@ public class Config {
 
     public <D> List<D> getOrSetDefaultValue(final String path, final List<D> def, final String comment) {
         final List<D> value = getOrSetDefaultValue(path, def);
-        if (comment != null && !comments.hasUserComment(path)) {
+        seedCommentIfUnpersisted(path, comment);
+        return value;
+    }
+
+    /**
+     * Deposit a seeded block comment only when {@code path} is being written for the FIRST time (it was
+     * not present at load and carries no authoritative comment). Re-running with a path the file already
+     * had is a no-op, so a comment the user deleted is never resurrected.
+     */
+    private void seedCommentIfUnpersisted(final String path, final String comment) {
+        if (comment != null && !loadedPaths.contains(path) && !comments.hasUserComment(path)) {
             comments.seedComment(path, comment);
             newDefaultValueToSave = true;
         }
-        return value;
     }
 
     public void setDefaultValue(final String path, final Object value) {

@@ -142,7 +142,24 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
         final StringBuilder out = new StringBuilder();
         final CommentTree comments = commentTree != null ? commentTree : new CommentTree();
         final KeyOrder order = keyOrder != null ? keyOrder : KeyOrder.empty();
+
+        final List<String> header = comments.getHeader();
+        if (!header.isEmpty()) {
+            for (final String line : header) {
+                out.append(prefixComment(line)).append('\n');
+            }
+            out.append('\n'); // blank line separates the header from the first key
+        }
+
         emit((ObjectNode) tree, "", 0, out, comments, order);
+
+        final List<String> footer = comments.getFooter();
+        if (!footer.isEmpty()) {
+            out.append('\n');
+            for (final String line : footer) {
+                out.append(prefixComment(line)).append('\n');
+            }
+        }
         return out.toString();
     }
 
@@ -179,6 +196,10 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
         for (final String key : orderedFieldNames(node, parentPath, order)) {
             final JsonNode val = node.get(key);
             final String path = parentPath.isEmpty() ? key : parentPath + SEP + key;
+
+            for (int b = comments.getBlankLinesBefore(path); b > 0; b--) {
+                out.append('\n'); // preserve the file's vertical spacing above this key
+            }
 
             final String block = comments.getComment(path, CommentType.BLOCK);
             if (block != null) {
@@ -254,28 +275,29 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
     private CommentTree parseComments(final String yaml) {
         final CommentTree tree = new CommentTree();
         final Deque<Frame> stack = new ArrayDeque<>();
-        final List<String> pendingBlock = new ArrayList<>();
+        final List<String> pending = new ArrayList<>(); // comment lines + "" blanks since the last key
+        boolean firstKeySeen = false;
 
         for (final String raw : yaml.split("\n", -1)) {
             final String line = raw.endsWith("\r") ? raw.substring(0, raw.length() - 1) : raw;
             final String trimmed = line.trim();
 
             if (trimmed.isEmpty()) {
-                pendingBlock.add("");
+                pending.add("");
                 continue;
             }
             if (trimmed.charAt(0) == '#') {
-                pendingBlock.add(trimmed);
+                pending.add(trimmed);
                 continue;
             }
             if (trimmed.startsWith("- ") || trimmed.equals("-")) {
-                pendingBlock.clear(); // comments on list items are not tracked
+                pending.clear(); // comments on list items are not tracked
                 continue;
             }
 
             final int colon = keyColon(trimmed);
             if (colon < 0) {
-                pendingBlock.clear();
+                pending.clear();
                 continue;
             }
 
@@ -288,13 +310,28 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
             final String path = pathOf(stack, key);
             stack.push(new Frame(indent, key));
 
-            if (!pendingBlock.isEmpty()) {
-                final String block = stripComments(joinTrim(pendingBlock));
-                if (!block.isEmpty()) {
-                    tree.putFileComment(path, block, CommentType.BLOCK);
+            // The block above the very first key may be a file header (a comment block separated from
+            // the key by a blank line) rather than the key's own comment; peel it off if so.
+            List<String> keyPending = pending;
+            if (!firstKeySeen) {
+                firstKeySeen = true;
+                final int boundary = headerBoundary(pending);
+                if (boundary >= 0) {
+                    tree.setHeader(extractBlockLines(pending.subList(0, boundary)));
+                    keyPending = new ArrayList<>(pending.subList(boundary + 1, pending.size()));
                 }
-                pendingBlock.clear();
             }
+
+            int leadingBlanks = 0;
+            while (leadingBlanks < keyPending.size() && keyPending.get(leadingBlanks).isEmpty()) {
+                leadingBlanks++;
+            }
+            tree.setBlankLinesBefore(path, leadingBlanks);
+            final List<String> blockLines = extractBlockLines(keyPending);
+            if (!blockLines.isEmpty()) {
+                tree.putFileComment(path, String.join("\n", blockLines), CommentType.BLOCK);
+            }
+            pending.clear();
 
             final String afterColon = trimmed.substring(colon + 1);
             final int hash = sideHash(afterColon);
@@ -302,7 +339,49 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
                 tree.putFileComment(path, stripComment(afterColon.substring(hash).trim()), CommentType.SIDE);
             }
         }
+
+        // Comment lines trailing the last key (no following key) are the file footer.
+        final List<String> footer = extractBlockLines(pending);
+        if (!footer.isEmpty()) {
+            tree.setFooter(footer);
+        }
         return tree;
+    }
+
+    /**
+     * Index in {@code pending} of the blank line that separates a file header from the first key's own
+     * block — the first blank line that follows at least one comment line — or -1 when the leading
+     * comments run straight into the key (so there is no header).
+     */
+    private static int headerBoundary(final List<String> pending) {
+        boolean sawComment = false;
+        for (int i = 0; i < pending.size(); i++) {
+            if (pending.get(i).isEmpty()) {
+                if (sawComment) {
+                    return i;
+                }
+            } else {
+                sawComment = true;
+            }
+        }
+        return -1;
+    }
+
+    /** Drop leading/trailing blank lines, strip the {@code #} marker from each remaining line. */
+    private static List<String> extractBlockLines(final List<String> raw) {
+        int start = 0;
+        int end = raw.size();
+        while (start < end && raw.get(start).isEmpty()) {
+            start++;
+        }
+        while (end > start && raw.get(end - 1).isEmpty()) {
+            end--;
+        }
+        final List<String> out = new ArrayList<>();
+        for (int i = start; i < end; i++) {
+            out.add(stripComment(raw.get(i)));
+        }
+        return out;
     }
 
     // ---- comment formatting helpers ------------------------------------
@@ -333,19 +412,6 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
             s = s.substring(1);
         }
         return s;
-    }
-
-    /** Strip the {@code #} prefix from every line of a multi-line block. */
-    private static String stripComments(final String block) {
-        final String[] lines = block.split("\n", -1);
-        final StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < lines.length; i++) {
-            if (i > 0) {
-                sb.append('\n');
-            }
-            sb.append(stripComment(lines[i]));
-        }
-        return sb.toString();
     }
 
     // ---- low-level text helpers ----------------------------------------
@@ -403,26 +469,6 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
             sb.append(it.next().key).append(SEP);
         }
         return sb.append(key).toString();
-    }
-
-    /** Join lines with '\n', dropping leading and trailing blank lines. */
-    private static String joinTrim(final List<String> lines) {
-        int start = 0;
-        int end = lines.size();
-        while (start < end && lines.get(start).isEmpty()) {
-            start++;
-        }
-        while (end > start && lines.get(end - 1).isEmpty()) {
-            end--;
-        }
-        final StringBuilder sb = new StringBuilder();
-        for (int i = start; i < end; i++) {
-            if (i > start) {
-                sb.append('\n');
-            }
-            sb.append(lines.get(i));
-        }
-        return sb.toString();
     }
 
     private static String spaces(final int n) {
