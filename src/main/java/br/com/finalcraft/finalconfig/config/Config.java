@@ -1,5 +1,9 @@
 package br.com.finalcraft.finalconfig.config;
 
+import br.com.finalcraft.finalconfig.binding.BindOptions;
+import br.com.finalcraft.finalconfig.binding.EntityBinder;
+import br.com.finalcraft.finalconfig.codec.Codec;
+import br.com.finalcraft.finalconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.finalconfig.config.section.ConfigSection;
 import br.com.finalcraft.finalconfig.core.KeyOrder;
 import br.com.finalcraft.finalconfig.core.coerce.NodeCoercion;
@@ -7,6 +11,7 @@ import br.com.finalcraft.finalconfig.core.comment.CommentTree;
 import br.com.finalcraft.finalconfig.core.comment.CommentType;
 import br.com.finalcraft.finalconfig.core.tree.Path;
 import br.com.finalcraft.finalconfig.core.tree.PathOptions;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -244,6 +249,11 @@ public class Config {
     public Object getValue(final String path) {
         final JsonNode n = resolve(path);
         return n == null ? null : coercion.unwrap(n);
+    }
+
+    /** The raw Jackson node at {@code path}, or null when absent — the binding layer's read entry point. */
+    public JsonNode getNode(final String path) {
+        return resolve(path);
     }
 
     public String getString(final String path) {
@@ -521,6 +531,23 @@ public class Config {
             return (D) coercion.asBoolean(node);
         }
         return (D) coercion.unwrap(node);
+    }
+
+    // ==================== typed entity binding (derived view) ====================
+
+    /** A typed binder over this config's tree, using {@code codec}'s mapper, with default options. */
+    public <T> EntityBinder<T> bind(final Class<T> type, final Codec codec) {
+        return bind(type, codec, BindOptions.defaults());
+    }
+
+    public <T> EntityBinder<T> bind(final Class<T> type, final Codec codec, final BindOptions options) {
+        final JavaType jt = ((ObjectMapperAware) codec).objectMapper().constructType(type);
+        return new EntityBinder<>(this, jt, codec, options);
+    }
+
+    /** Convenience: bind the whole tree to a fresh {@code T} (runs {@code @PostInject}). */
+    public <T> T loadAs(final Class<T> type, final Codec codec) {
+        return bind(type, codec).bind();
     }
 
     // ==================== save-defaults bookkeeping ====================
