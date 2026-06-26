@@ -8,10 +8,10 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * A scoped view of a {@link Config} rooted at a path (decision #2: one canonical tree; sections are
- * cursors, not copies). Holds only {@code (config, path)} and delegates every call to the owning
- * {@code Config} with the sub-path prefixed. Non-snapshotting: reads are live; thread-safety is the
- * owning {@code Config}'s contract (spec 01 §10).
+ * A scoped view of a {@link Config} rooted at a path: a cursor over the owning config's single tree,
+ * not a copy. Holds only {@code (config, path)} and delegates every call to the owning {@code Config}
+ * with the sub-path prefixed. Non-snapshotting: reads are live, so thread-safety is the owning
+ * {@code Config}'s contract.
  */
 public class ConfigSection {
 

@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Dotted-path utilities. The empty string and {@code null} both denote the root (spec 01 §2.1).
+ * Dotted-path utilities. The empty string and {@code null} both denote the root.
  */
 public final class Path {
 
@@ -60,7 +60,7 @@ public final class Path {
         return base + sep + sub;
     }
 
-    /** A non-negative integer literal selects an {@code ArrayNode} element (spec 01 §2.1). */
+    /** True for a non-negative integer literal, which selects an {@code ArrayNode} element. */
     public static boolean isIndex(final String seg) {
         if (seg == null || seg.isEmpty()) {
             return false;

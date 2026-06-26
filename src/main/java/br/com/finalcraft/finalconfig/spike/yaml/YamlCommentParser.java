@@ -7,14 +7,13 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * SPIKE: a text-based YAML comment parser. Reads YAML line by line, tracks the indent-to-path stack,
- * and attaches block comments (the {@code #...} lines above a key) and side comments (the {@code # ...}
- * trailing a value) into a {@link CommentTree}. It does NOT parse data — data is parsed by Jackson into
- * the {@code ObjectNode}; this only recovers comments and their paths.
+ * A text-based YAML comment parser. Reads YAML line by line, tracks the indent-to-path stack, and
+ * attaches block comments (the {@code #...} lines above a key) and side comments (the {@code # ...}
+ * trailing a value) into a {@link CommentTree}. It does not parse data — data is parsed by Jackson into
+ * the {@code ObjectNode}; this only recovers comments and the paths they belong to.
  *
- * <p>Adapted from Simple-YAML's {@code YamlCommentParser}/{@code YamlCommentReader}, simplified to the
- * common block-style cases (nested mappings, scalar + side comments). List-item comments are out of
- * scope for the spike. Promoted/refined in phase 03.
+ * <p>Handles the common block-style cases (nested mappings, scalar + side comments); comments on list
+ * items are not tracked.
  */
 public final class YamlCommentParser {
 
@@ -46,7 +45,7 @@ public final class YamlCommentParser {
                 continue;
             }
             if (trimmed.startsWith("- ") || trimmed.equals("-")) {
-                pendingBlock.clear(); // list element: not tracked in the spike
+                pendingBlock.clear(); // list element: comments on list items aren't tracked here
                 continue;
             }
 

@@ -1,10 +1,7 @@
 package br.com.finalcraft.finalconfig;
 
 /**
- * Build/version marker for FinalConfig (v2 — Jackson + codecs rewrite).
- *
- * <p>Placeholder so the freshly scaffolded module compiles; replace as the real API lands per the
- * specs under {@code specs/}.
+ * Build/version marker for the library.
  */
 public final class FCVersion {
 

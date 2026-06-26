@@ -11,13 +11,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * An immutable snapshot of the key order captured at load, per path (decision #4). It is the authority
- * for ordering at save (spec 01 §7.1): the emitter writes keys in this order first (for keys still
- * present), then appends keys absent from the snapshot in live-tree order — so a remove-then-readd keeps
- * the user's original file slot.
+ * An immutable snapshot of each object's key order as it was read from the file, keyed by dotted path.
+ * It is the authority for key ordering when the file is written back: keys appear in this captured order
+ * first (for those still present), then any keys not in the snapshot follow in live-tree order.
  *
- * <p>The dynamic API treats this as read-only; only load (phase 02) captures it and only the
- * emitter/migrations (phase 03/05) consult it. Phase 01 just holds it.
+ * <p>This snapshot is needed because an {@code ObjectNode} (backed by a {@code LinkedHashMap}) moves a
+ * key to the end when it is removed and re-added — so writing in live-tree order would silently reorder
+ * a file on every save. Holding the original order separately keeps a removed-and-re-added key in its
+ * original slot. The dynamic API never mutates it; it is captured on read and consulted on write.
  */
 public final class KeyOrder {
 

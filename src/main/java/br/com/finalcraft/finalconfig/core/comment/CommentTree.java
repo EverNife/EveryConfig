@@ -5,14 +5,14 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Format-agnostic comment overlay keyed by dotted path (decision #3). Each path may carry a block
- * comment and a side comment, each tagged with provenance — {@code seeded=false} means authoritative
- * (parsed from the file at load, or set explicitly via {@link #setComment}); {@code seeded=true} means
- * code-seeded via {@code getOrSetDefaultValue(path, def, comment)}.
+ * Format-agnostic comment overlay keyed by dotted path. Each path may carry a block comment and a side
+ * comment, each tagged with provenance: {@code seeded=false} means authoritative (parsed from the file,
+ * or set explicitly via {@link #setComment}); {@code seeded=true} means it came from a code-supplied
+ * default. The distinction is what lets a code default fill in a comment for a new key without ever
+ * overwriting one the user wrote.
  *
- * <p>This is the minimal phase-01 surface (the seam that {@code Config} needs): the load parser and the
- * save-time reconciliation/emitter are fleshed out in phase 03. Comment text is stored WITHOUT the
- * {@code #} prefix; prefixing is an emit-time concern.
+ * <p>Comment text is stored without the {@code #} prefix; prefixing happens when the document is
+ * written.
  */
 public final class CommentTree {
 
@@ -79,7 +79,7 @@ public final class CommentTree {
         }
     }
 
-    // ---- seed (decision #1: only if no authoritative comment exists) ----
+    // ---- seed (writes only if no authoritative comment exists) ----
 
     /** Seed a BLOCK comment only when the path has no authoritative (file/explicit) comment yet. */
     public void seedComment(final String path, final String comment) {
@@ -101,7 +101,7 @@ public final class CommentTree {
 
     /**
      * Drop the comment for {@code path} and every descendant. Called whenever a path's data subtree is
-     * structurally replaced or removed (spec 01 §5.1 rule 4) so a comment never outlives its data.
+     * structurally replaced or removed, so a comment never outlives the data it described.
      */
     public void removeSubtree(final String path) {
         if (path == null || path.isEmpty()) {

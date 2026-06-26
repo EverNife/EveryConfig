@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Phase-01 contract tests for the dynamic path API over the canonical ObjectNode (spec 01). */
+/** Contract tests for the dynamic path API over the canonical ObjectNode. */
 public class ConfigDynamicApiTest {
 
     @Test
@@ -158,7 +158,7 @@ public class ConfigDynamicApiTest {
     void getRootEscapeHatchAndUnknownKeysSurvive() {
         final Config c = new Config();
         c.setValue("known", 1);
-        // raw tree mutation (decision #2: the tree wins)
+        // raw tree mutation: the tree is the single source of truth
         c.getRoot().put("unknown", "value-not-via-api");
 
         assertTrue(c.contains("unknown"));

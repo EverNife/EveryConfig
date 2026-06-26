@@ -13,10 +13,11 @@ import java.util.Map;
 import java.util.function.Function;
 
 /**
- * The single coercion point (spec 01 §4/§6): Java {@code Object} → {@code JsonNode} (inbound) and
- * {@code JsonNode} → Java value (outbound). All typed getters route through here, so "what does getInt
- * do to a string node" is defined in exactly one place — including the legacy stringified-long quirk
- * (§6.1), generalized as read-tolerance to every numeric getter.
+ * The single place values cross between Java and Jackson: {@code Object} → {@code JsonNode} (inbound)
+ * and {@code JsonNode} → Java value (outbound). All typed getters route through here, so "what does
+ * getInt do to a string node" is defined in exactly one place. Numeric getters tolerate a number stored
+ * as a string (e.g. a value once written as a quoted long still reads back), applied uniformly to int,
+ * long and double so the behavior is symmetric.
  */
 public final class NodeCoercion {
 
@@ -152,7 +153,7 @@ public final class NodeCoercion {
         return null;
     }
 
-    /** Legacy stringified-long compatible (spec 01 §6.1): a quoted long/`"1.0"` still reads. */
+    /** Tolerant of a long stored as a quoted string (e.g. {@code "1700000000000"} or {@code "1.0"}). */
     public Long asLong(final JsonNode n) {
         if (isAbsentish(n)) {
             return null;

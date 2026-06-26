@@ -1,8 +1,8 @@
 package br.com.finalcraft.finalconfig.core.tree;
 
 /**
- * Path grammar for the dynamic API. Default separator is {@code '.'}, matching the old project's
- * {@code pathSeparator()} (which old callers could change).
+ * Path grammar for the dynamic API. The default separator is {@code '.'}; a different one can be used
+ * when a key may legitimately contain a dot.
  */
 public final class PathOptions {
 

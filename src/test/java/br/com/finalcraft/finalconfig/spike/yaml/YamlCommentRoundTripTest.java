@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * De-risk proof for the comment overlay: read commented YAML into an ObjectNode + CommentTree, mutate
+ * Round-trip proof for the comment overlay: read commented YAML into an ObjectNode + CommentTree, mutate
  * the tree (change a value, add a key with a seeded comment), re-emit, and assert that existing
  * comments are preserved, the value change is reflected, and the seed appears — then that the output
  * survives a second parse (comments still recoverable).
@@ -69,7 +69,7 @@ public class YamlCommentRoundTripTest {
         // Seed for the new key present.
         assertTrue(out.contains("# maximum concurrent connections"), out);
         assertTrue(out.contains("max-connections: 100"), out);
-        // Decision #1: a seed on a path that already has a file comment is IGNORED (user/file wins).
+        // a seed on a path that already has a file comment is ignored (the file/user comment wins).
         assertTrue(out.contains("# the JDBC url"), out);
         assertTrue(!out.contains("SEED THAT MUST BE IGNORED"), out);
 

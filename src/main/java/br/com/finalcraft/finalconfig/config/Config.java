@@ -22,13 +22,14 @@ import java.util.UUID;
 
 /**
  * The dynamic configuration handle: a thin wrapper over a canonical, mutable Jackson {@link ObjectNode}
- * (decision #2) plus a sibling {@link CommentTree} and a load-captured {@link KeyOrder}. Carries the
- * full dynamic path API ({@code setValue}/{@code getValue}/typed getters/{@code getKeys}/
- * {@code getOrSetDefaultValue}). Typed entity binding (phase 04) and file I/O (phase 05) live elsewhere;
- * {@code Config} is a pure data+API object.
+ * (the single source of truth) plus a sibling {@link CommentTree} and a captured {@link KeyOrder}. It
+ * carries the full dynamic path API ({@code setValue}/{@code getValue}/typed getters/{@code getKeys}/
+ * {@code getOrSetDefaultValue}). Typed entity binding and file I/O live elsewhere; {@code Config} is a
+ * pure data+API object.
  *
- * <p>Single-writer-by-convention (spec 01 §10): concurrent reads are fine; concurrent writes require
- * caller synchronization. {@link #getRoot()} is the deliberate "tree wins" escape hatch.
+ * <p>Single-writer-by-convention: concurrent reads are fine; concurrent writes (or a write racing a
+ * read) require caller synchronization. {@link #getRoot()} exposes the tree directly as the escape
+ * hatch for callers that want raw Jackson access.
  */
 public class Config {
 
@@ -63,7 +64,7 @@ public class Config {
 
     // ==================== escape hatch + internals ====================
 
-    /** The live canonical tree (decision #2: the tree wins; callers may touch it raw). */
+    /** The live canonical tree; callers may read or mutate it directly (it is the source of truth). */
     public ObjectNode getRoot() {
         return root;
     }
@@ -95,7 +96,8 @@ public class Config {
 
     // ==================== navigation ====================
 
-    /** Read navigation: null = absent; a stored NullNode is returned as NullNode (spec 01 §2.2, §5.1). */
+    /** Read navigation: returns null when absent; a stored NullNode is returned as-is, because a
+     *  present-but-null value is distinct from an absent path. */
     private JsonNode resolve(final String path) {
         JsonNode cur = root;
         for (final String seg : Path.split(path, sep())) {
@@ -129,7 +131,8 @@ public class Config {
         }
     }
 
-    /** Write navigation with auto-vivification; only ever mints ObjectNodes (spec 01 §2.3). */
+    /** Write navigation: walks to the leaf's parent, creating intermediate objects as needed. Only
+     *  ever mints ObjectNodes — a numeric segment never grows an array on the write path. */
     private ParentAndKey vivify(final String path) {
         final String[] segs = Path.split(path, sep());
         if (segs.length == 0) {
@@ -148,7 +151,7 @@ public class Config {
             } else {
                 final ObjectNode created = nodes.objectNode();
                 cur.set(segs[i], created);
-                comments.removeSubtree(prefix.toString()); // prune orphaned comments (§5.1.4)
+                comments.removeSubtree(prefix.toString()); // replaced subtree's comments no longer apply
                 cur = created;
             }
         }
@@ -222,7 +225,7 @@ public class Config {
         return removed;
     }
 
-    /** Alias kept for source compatibility with the old {@code ConfigSection.clear()} idiom. */
+    /** Alias for {@link #removeValue(String)} (for callers that prefer a {@code clear} idiom). */
     public boolean clear(final String path) {
         return removeValue(path);
     }
@@ -385,7 +388,7 @@ public class Config {
         return out;
     }
 
-    // ==================== comment seam (decision #1 seed half + #4) ====================
+    // ==================== comment seam (seed-on-absent + pass-through) ====================
 
     public void setComment(final String path, final String comment) {
         comments.setComment(path, comment, CommentType.BLOCK);
@@ -451,7 +454,8 @@ public class Config {
         getOrSetDefaultValue(path, value, comment);
     }
 
-    /** Re-tag an already-stored numeric/scalar leaf to the default's runtime type (spec 01 §6.4). */
+    /** Re-tag an already-stored scalar to the default's runtime type, so a value held as a long reads
+     *  back as the Integer the caller's default implies (avoiding a ClassCastException). */
     @SuppressWarnings("unchecked")
     private <D> D coerceLikeDefault(final JsonNode node, final D def) {
         if (def instanceof String) {
@@ -476,7 +480,7 @@ public class Config {
         return (D) coercion.unwrap(node);
     }
 
-    // ==================== save-defaults bookkeeping (consumed by phase 05) ====================
+    // ==================== save-defaults bookkeeping ====================
 
     public boolean isNewDefaultValueToSave() {
         return newDefaultValueToSave;

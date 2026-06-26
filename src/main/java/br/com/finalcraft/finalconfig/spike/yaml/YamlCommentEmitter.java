@@ -9,14 +9,10 @@ import java.util.Iterator;
 import java.util.Map;
 
 /**
- * SPIKE: the structure-rendering YAML emitter (decision #5). It walks the canonical {@code ObjectNode}
- * and renders STRUCTURE itself — keys, indentation, sections, and the {@link CommentTree} comments —
- * delegating ONLY leaf-value serialization (scalars, arrays) to a Jackson {@link YAMLMapper}. The
- * mapper output is never re-parsed, so a user-supplied mapper can't break the layout.
- *
- * <p>Mirrors jshepherd's {@code YamlPersistenceDelegate} tree-walking writer, but driven by an
- * {@code ObjectNode} + a {@code CommentTree} instead of reflected POJO fields. Promoted/refined in
- * phase 03 / 04.
+ * A YAML emitter that renders the document structure itself — keys, indentation, sections, and the
+ * {@link CommentTree} comments — delegating only leaf-value serialization (scalars, arrays) to a Jackson
+ * {@link YAMLMapper}. The mapper's output is never re-parsed, so the comment layout is fully controlled
+ * here and a caller-supplied mapper can customize value formatting without disturbing it.
  */
 public final class YamlCommentEmitter {
 

@@ -4,13 +4,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * SPIKE (de-risk prototype, not the production type): a format-agnostic comment overlay keyed by
- * dotted path. Each path may carry a raw block comment (the {@code #...} lines above a key) and a raw
- * side comment (the {@code # ...} trailing a value). Decoupled from the data tree — the values live in
- * the Jackson {@code ObjectNode}; this only holds comments.
+ * A format-agnostic comment overlay keyed by dotted path: each path may carry a raw block comment (the
+ * {@code #...} lines above a key) and a raw side comment (the {@code # ...} trailing a value). Decoupled
+ * from the data — the values live in the Jackson {@code ObjectNode}; this holds only comments.
  *
- * <p>Adapted from Simple-YAML's {@code KeyTree.Node} (block + side comment per node) but stripped of the
- * value reach-back that coupled it to the configuration. Promoted/refined in phase 03.
+ * <p>A prototype that validates the read-mutate-write comment round-trip end to end.
  */
 public final class CommentTree {
 
@@ -36,8 +34,8 @@ public final class CommentTree {
     }
 
     /**
-     * Seed a block comment from code (decision #1, seed half): adds a {@code "# "} prefix per line and
-     * writes it ONLY if the path has no block comment yet, so a file/user comment always wins.
+     * Seed a block comment from code: adds a {@code "# "} prefix per line and writes it only if the path
+     * has no block comment yet, so a comment already in the file always wins.
      */
     public void seedBlock(final String path, final String text) {
         final Entry existing = byPath.get(path);
