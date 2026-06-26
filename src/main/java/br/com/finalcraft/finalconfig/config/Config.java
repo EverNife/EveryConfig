@@ -1,0 +1,493 @@
+package br.com.finalcraft.finalconfig.config;
+
+import br.com.finalcraft.finalconfig.config.section.ConfigSection;
+import br.com.finalcraft.finalconfig.core.KeyOrder;
+import br.com.finalcraft.finalconfig.core.coerce.NodeCoercion;
+import br.com.finalcraft.finalconfig.core.comment.CommentTree;
+import br.com.finalcraft.finalconfig.core.comment.CommentType;
+import br.com.finalcraft.finalconfig.core.tree.Path;
+import br.com.finalcraft.finalconfig.core.tree.PathOptions;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * The dynamic configuration handle: a thin wrapper over a canonical, mutable Jackson {@link ObjectNode}
+ * (decision #2) plus a sibling {@link CommentTree} and a load-captured {@link KeyOrder}. Carries the
+ * full dynamic path API ({@code setValue}/{@code getValue}/typed getters/{@code getKeys}/
+ * {@code getOrSetDefaultValue}). Typed entity binding (phase 04) and file I/O (phase 05) live elsewhere;
+ * {@code Config} is a pure data+API object.
+ *
+ * <p>Single-writer-by-convention (spec 01 §10): concurrent reads are fine; concurrent writes require
+ * caller synchronization. {@link #getRoot()} is the deliberate "tree wins" escape hatch.
+ */
+public class Config {
+
+    private final ObjectNode root;
+    private final CommentTree comments;
+    private final KeyOrder fileKeyOrder;
+    private final JsonNodeFactory nodes;
+    private final PathOptions pathOptions;
+    private final NodeCoercion coercion;
+
+    private transient boolean newDefaultValueToSave = false;
+
+    public Config() {
+        this(JsonNodeFactory.instance.objectNode(), new CommentTree(), KeyOrder.empty());
+    }
+
+    public Config(final ObjectNode root) {
+        this(root, new CommentTree(), KeyOrder.empty());
+    }
+
+    public Config(final ObjectNode root, final CommentTree comments, final KeyOrder fileKeyOrder) {
+        if (root == null) {
+            throw new IllegalArgumentException("root ObjectNode cannot be null");
+        }
+        this.root = root;
+        this.comments = comments != null ? comments : new CommentTree();
+        this.fileKeyOrder = fileKeyOrder != null ? fileKeyOrder : KeyOrder.empty();
+        this.nodes = JsonNodeFactory.instance;
+        this.pathOptions = PathOptions.DEFAULT;
+        this.coercion = new NodeCoercion(this.nodes);
+    }
+
+    // ==================== escape hatch + internals ====================
+
+    /** The live canonical tree (decision #2: the tree wins; callers may touch it raw). */
+    public ObjectNode getRoot() {
+        return root;
+    }
+
+    public CommentTree getCommentTree() {
+        return comments;
+    }
+
+    public KeyOrder getFileKeyOrder() {
+        return fileKeyOrder;
+    }
+
+    public NodeCoercion getCoercion() {
+        return coercion;
+    }
+
+    private char sep() {
+        return pathOptions.separator();
+    }
+
+    public char pathSeparator() {
+        return pathOptions.separator();
+    }
+
+    /** Join a base path with a sub-path using this config's separator (used by {@link ConfigSection}). */
+    public String concat(final String base, final String sub) {
+        return Path.join(base, sub, sep());
+    }
+
+    // ==================== navigation ====================
+
+    /** Read navigation: null = absent; a stored NullNode is returned as NullNode (spec 01 §2.2, §5.1). */
+    private JsonNode resolve(final String path) {
+        JsonNode cur = root;
+        for (final String seg : Path.split(path, sep())) {
+            if (cur instanceof ObjectNode) {
+                if (!((ObjectNode) cur).has(seg)) {
+                    return null;
+                }
+                cur = cur.get(seg);
+            } else if (cur instanceof ArrayNode && Path.isIndex(seg)) {
+                cur = cur.get(Integer.parseInt(seg));
+                if (cur == null) {
+                    return null;
+                }
+            } else {
+                return null;
+            }
+            if (cur != null && cur.isMissingNode()) {
+                return null;
+            }
+        }
+        return cur;
+    }
+
+    private static final class ParentAndKey {
+        final ObjectNode parent;
+        final String key;
+
+        ParentAndKey(final ObjectNode parent, final String key) {
+            this.parent = parent;
+            this.key = key;
+        }
+    }
+
+    /** Write navigation with auto-vivification; only ever mints ObjectNodes (spec 01 §2.3). */
+    private ParentAndKey vivify(final String path) {
+        final String[] segs = Path.split(path, sep());
+        if (segs.length == 0) {
+            throw new IllegalArgumentException("cannot set the root path as a leaf value");
+        }
+        ObjectNode cur = root;
+        final StringBuilder prefix = new StringBuilder();
+        for (int i = 0; i < segs.length - 1; i++) {
+            if (prefix.length() > 0) {
+                prefix.append(sep());
+            }
+            prefix.append(segs[i]);
+            final JsonNode next = cur.get(segs[i]);
+            if (next instanceof ObjectNode) {
+                cur = (ObjectNode) next;
+            } else {
+                final ObjectNode created = nodes.objectNode();
+                cur.set(segs[i], created);
+                comments.removeSubtree(prefix.toString()); // prune orphaned comments (§5.1.4)
+                cur = created;
+            }
+        }
+        return new ParentAndKey(cur, segs[segs.length - 1]);
+    }
+
+    // ==================== set / remove ====================
+
+    public void setValue(final String path, final Object value) {
+        if (Path.isRoot(path)) {
+            setRoot(value);
+            return;
+        }
+        if (value == null) {
+            removeValue(path);
+            return;
+        }
+        final JsonNode node = coercion.toNode(value);
+        if (node == null || node.isMissingNode()) {
+            removeValue(path);
+            return;
+        }
+        final ParentAndKey pk = vivify(path);
+        final JsonNode existing = pk.parent.get(pk.key);
+        if (existing != null && existing.isContainerNode()) {
+            comments.removeSubtree(path); // replacing a subtree drops its descendants' comments
+        }
+        pk.parent.set(pk.key, node);
+    }
+
+    public void setValue(final String path, final Object value, final String comment) {
+        setValue(path, value);
+        if (value != null && comment != null) {
+            setComment(path, comment);
+        }
+    }
+
+    private void setRoot(final Object value) {
+        if (value == null) {
+            root.removeAll();
+            comments.removeSubtree("");
+            return;
+        }
+        final JsonNode node = coercion.toNode(value);
+        if (!(node instanceof ObjectNode)) {
+            throw new IllegalArgumentException("the root must be an object");
+        }
+        root.removeAll();
+        comments.removeSubtree("");
+        root.setAll((ObjectNode) node);
+    }
+
+    public boolean removeValue(final String path) {
+        if (Path.isRoot(path)) {
+            root.removeAll();
+            comments.removeSubtree("");
+            return true;
+        }
+        final JsonNode parent = resolve(Path.parent(path, sep()));
+        final String leaf = Path.leaf(path, sep());
+        boolean removed = false;
+        if (parent instanceof ObjectNode) {
+            removed = ((ObjectNode) parent).remove(leaf) != null;
+        } else if (parent instanceof ArrayNode && Path.isIndex(leaf)) {
+            ((ArrayNode) parent).remove(Integer.parseInt(leaf));
+            removed = true;
+        }
+        if (removed) {
+            comments.removeSubtree(path);
+        }
+        return removed;
+    }
+
+    /** Alias kept for source compatibility with the old {@code ConfigSection.clear()} idiom. */
+    public boolean clear(final String path) {
+        return removeValue(path);
+    }
+
+    // ==================== get ====================
+
+    public Object getValue(final String path) {
+        final JsonNode n = resolve(path);
+        return n == null ? null : coercion.unwrap(n);
+    }
+
+    public String getString(final String path) {
+        return getString(path, null);
+    }
+
+    public String getString(final String path, final String def) {
+        final String s = coercion.asString(resolve(path));
+        return s != null ? s : def;
+    }
+
+    public int getInt(final String path) {
+        return getInt(path, 0);
+    }
+
+    public int getInt(final String path, final int def) {
+        final Integer v = coercion.asInt(resolve(path));
+        return v != null ? v : def;
+    }
+
+    public long getLong(final String path) {
+        return getLong(path, 0L);
+    }
+
+    public long getLong(final String path, final long def) {
+        final Long v = coercion.asLong(resolve(path));
+        return v != null ? v : def;
+    }
+
+    public double getDouble(final String path) {
+        return getDouble(path, 0.0);
+    }
+
+    public double getDouble(final String path, final double def) {
+        final Double v = coercion.asDouble(resolve(path));
+        return v != null ? v : def;
+    }
+
+    public boolean getBoolean(final String path) {
+        return getBoolean(path, false);
+    }
+
+    public boolean getBoolean(final String path, final boolean def) {
+        final Boolean v = coercion.asBoolean(resolve(path));
+        return v != null ? v : def;
+    }
+
+    public List<String> getStringList(final String path) {
+        final List<String> l = coercion.asStringList(resolve(path));
+        return l != null ? l : new java.util.ArrayList<String>();
+    }
+
+    public List<String> getStringList(final String path, final List<String> def) {
+        if (!contains(path)) {
+            return def;
+        }
+        final List<String> l = coercion.asStringList(resolve(path));
+        return l != null ? l : def;
+    }
+
+    public List<Object> getList(final String path) {
+        return coercion.asList(resolve(path));
+    }
+
+    public List<Object> getList(final String path, final List<Object> def) {
+        final List<Object> l = coercion.asList(resolve(path));
+        return l != null ? l : def;
+    }
+
+    public UUID getUUID(final String path) {
+        final String s = getString(path);
+        return s == null ? null : UUID.fromString(s);
+    }
+
+    public UUID getUUID(final String path, final UUID def) {
+        try {
+            final UUID u = getUUID(path);
+            return u != null ? u : def;
+        } catch (final IllegalArgumentException e) {
+            return def;
+        }
+    }
+
+    // ==================== keys / containment / sections ====================
+
+    public boolean contains(final String path) {
+        return resolve(path) != null;
+    }
+
+    public Set<String> getKeys() {
+        return keysOf(root);
+    }
+
+    public Set<String> getKeys(final String path) {
+        return keysOf(resolve(path));
+    }
+
+    public Set<String> getKeys(final String path, final boolean deep) {
+        if (!deep) {
+            return getKeys(path);
+        }
+        final JsonNode n = resolve(path);
+        final Set<String> out = new LinkedHashSet<>();
+        if (n instanceof ObjectNode) {
+            collectDeep((ObjectNode) n, "", out);
+        }
+        return out;
+    }
+
+    private Set<String> keysOf(final JsonNode n) {
+        if (!(n instanceof ObjectNode)) {
+            return Collections.emptySet();
+        }
+        final Set<String> out = new LinkedHashSet<>();
+        ((ObjectNode) n).fieldNames().forEachRemaining(out::add);
+        return out;
+    }
+
+    private void collectDeep(final ObjectNode node, final String prefix, final Set<String> out) {
+        final Iterator<Map.Entry<String, JsonNode>> it = node.fields();
+        while (it.hasNext()) {
+            final Map.Entry<String, JsonNode> e = it.next();
+            final String p = prefix.isEmpty() ? e.getKey() : prefix + sep() + e.getKey();
+            out.add(p);
+            if (e.getValue() instanceof ObjectNode) {
+                collectDeep((ObjectNode) e.getValue(), p, out);
+            }
+        }
+    }
+
+    /** Always returns a (possibly empty) section view (old {@code getConfigSection} contract). */
+    public ConfigSection getConfigSection(final String path) {
+        return new ConfigSection(this, path);
+    }
+
+    /** Returns a section view, or null when the path is absent or not an object (old contract). */
+    public ConfigSection getConfigurationSection(final String path) {
+        final JsonNode n = resolve(path);
+        return (n instanceof ObjectNode) ? new ConfigSection(this, path) : null;
+    }
+
+    public Set<ConfigSection> getKeysSections() {
+        return getKeysSections("");
+    }
+
+    public Set<ConfigSection> getKeysSections(final String path) {
+        final Set<ConfigSection> out = new LinkedHashSet<>();
+        for (final String k : getKeys(path)) {
+            out.add(new ConfigSection(this, Path.join(path, k, sep())));
+        }
+        return out;
+    }
+
+    // ==================== comment seam (decision #1 seed half + #4) ====================
+
+    public void setComment(final String path, final String comment) {
+        comments.setComment(path, comment, CommentType.BLOCK);
+    }
+
+    public void setComment(final String path, final String comment, final CommentType type) {
+        comments.setComment(path, comment, type);
+    }
+
+    public String getComment(final String path) {
+        return comments.getComment(path, CommentType.BLOCK);
+    }
+
+    public String getComment(final String path, final CommentType type) {
+        return comments.getComment(path, type);
+    }
+
+    // ==================== getOrSetDefaultValue (the seeding engine) ====================
+
+    public <D> D getOrSetDefaultValue(final String path, final D def) {
+        if (!contains(path)) {
+            setValue(path, def);
+            newDefaultValueToSave = true;
+            return def;
+        }
+        final D coerced = coerceLikeDefault(resolve(path), def);
+        return coerced != null ? coerced : def;
+    }
+
+    public <D> D getOrSetDefaultValue(final String path, final D def, final String comment) {
+        final D value = getOrSetDefaultValue(path, def);
+        if (comment != null && !comments.hasUserComment(path)) {
+            comments.seedComment(path, comment);
+            newDefaultValueToSave = true;
+        }
+        return value;
+    }
+
+    @SuppressWarnings("unchecked")
+    public <D> List<D> getOrSetDefaultValue(final String path, final List<D> def) {
+        if (!contains(path)) {
+            setValue(path, def);
+            newDefaultValueToSave = true;
+            return def;
+        }
+        return (List<D>) (List<?>) getList(path);
+    }
+
+    public <D> List<D> getOrSetDefaultValue(final String path, final List<D> def, final String comment) {
+        final List<D> value = getOrSetDefaultValue(path, def);
+        if (comment != null && !comments.hasUserComment(path)) {
+            comments.seedComment(path, comment);
+            newDefaultValueToSave = true;
+        }
+        return value;
+    }
+
+    public void setDefaultValue(final String path, final Object value) {
+        getOrSetDefaultValue(path, value);
+    }
+
+    public void setDefaultValue(final String path, final Object value, final String comment) {
+        getOrSetDefaultValue(path, value, comment);
+    }
+
+    /** Re-tag an already-stored numeric/scalar leaf to the default's runtime type (spec 01 §6.4). */
+    @SuppressWarnings("unchecked")
+    private <D> D coerceLikeDefault(final JsonNode node, final D def) {
+        if (def instanceof String) {
+            return (D) coercion.asString(node);
+        }
+        if (def instanceof Integer) {
+            return (D) coercion.asInt(node);
+        }
+        if (def instanceof Long) {
+            return (D) coercion.asLong(node);
+        }
+        if (def instanceof Double) {
+            return (D) coercion.asDouble(node);
+        }
+        if (def instanceof Float) {
+            final Double d = coercion.asDouble(node);
+            return d == null ? null : (D) Float.valueOf(d.floatValue());
+        }
+        if (def instanceof Boolean) {
+            return (D) coercion.asBoolean(node);
+        }
+        return (D) coercion.unwrap(node);
+    }
+
+    // ==================== save-defaults bookkeeping (consumed by phase 05) ====================
+
+    public boolean isNewDefaultValueToSave() {
+        return newDefaultValueToSave;
+    }
+
+    public void clearNewDefaultValueToSave() {
+        newDefaultValueToSave = false;
+    }
+
+    @Override
+    public String toString() {
+        return root.toString();
+    }
+}
