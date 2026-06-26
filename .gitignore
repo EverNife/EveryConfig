@@ -1,0 +1,17 @@
+# Build output
+.gradle/
+build/
+out/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Planning / design docs — local working material, not shipped
+/specs/

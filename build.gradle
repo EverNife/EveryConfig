@@ -1,0 +1,55 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'br.com.finalcraft'
+version = '2.0.0-SNAPSHOT'
+
+ext.jacksonVersion = '2.18.5'
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://jitpack.io' } // Jabel
+}
+
+dependencies {
+    // ---- Jackson: the serialization engine (data <-> ObjectNode <-> text/entity) ----
+    api platform("com.fasterxml.jackson:jackson-bom:${jacksonVersion}")
+    api 'com.fasterxml.jackson.core:jackson-databind'
+    api 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
+    api 'com.fasterxml.jackson.dataformat:jackson-dataformat-toml'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+
+    api 'org.jetbrains:annotations:24.1.0'
+
+    // ---- Lombok ----
+    compileOnly 'org.projectlombok:lombok:1.18.42'
+    annotationProcessor 'org.projectlombok:lombok:1.18.42'
+    testCompileOnly 'org.projectlombok:lombok:1.18.42'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.42'
+
+    // ---- Jabel: write Java 17 syntax, emit Java 8 bytecode ----
+    annotationProcessor 'com.github.bsideup.jabel:jabel-javac-plugin:0.4.2'
+    compileOnly 'com.github.bsideup.jabel:jabel-javac-plugin:0.4.2'
+
+    // ---- Tests ----
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.2'
+}
+
+compileJava.options.encoding = 'UTF-8'
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs.add('-parameters') // keep parameter names on the compiled jar
+}
+
+// Production code: Java 17 source level (Jabel lifts javac's source check) emitting Java 8 bytecode.
+configure([tasks.compileJava]) {
+    sourceCompatibility = 17 // IDE hint only; options.release governs the actual compile
+    options.release = 8
+}
+
+test {
+    useJUnitPlatform()
+}
