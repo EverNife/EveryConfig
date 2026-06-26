@@ -550,6 +550,13 @@ public class Config {
         return bind(type, codec).bind();
     }
 
+    /** Merge a POJO into this config's tree (the in-memory write side; persistence is the backend's job). */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public void mergeFrom(final Object pojo, final Codec codec) {
+        final EntityBinder binder = bind(pojo.getClass(), codec);
+        binder.writeEntity(pojo);
+    }
+
     // ==================== save-defaults bookkeeping ====================
 
     public boolean isNewDefaultValueToSave() {

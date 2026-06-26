@@ -1,16 +1,26 @@
 package br.com.finalcraft.finalconfig.binding;
 
+import br.com.finalcraft.finalconfig.annotation.Comment;
+import br.com.finalcraft.finalconfig.annotation.Key;
 import br.com.finalcraft.finalconfig.codec.Codec;
+import br.com.finalcraft.finalconfig.codec.CommentFidelity;
 import br.com.finalcraft.finalconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.finalconfig.config.Config;
+import br.com.finalcraft.finalconfig.core.comment.CommentTree;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.deser.DeserializationProblemHandler;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * A typed view bound to one {@link Config}: it reads a POJO from the canonical tree and (write side,
@@ -22,8 +32,12 @@ public final class EntityBinder<T> {
 
     private static final DeserializationProblemHandler LENIENT = new LenientProblemHandler();
 
+    /** One schema cache per shared codec mapper, so a type is introspected once and reused. */
+    private static final ConcurrentHashMap<ObjectMapper, SchemaCache> SCHEMA_CACHES = new ConcurrentHashMap<>();
+
     private final Config config;
     private final JavaType type;
+    private final Codec codec;
     private final ObjectMapper mapper;
     private final BindOptions options;
 
@@ -35,6 +49,7 @@ public final class EntityBinder<T> {
         }
         this.config = config;
         this.type = type;
+        this.codec = codec;
         this.mapper = ((ObjectMapperAware) codec).objectMapper();
         this.options = options != null ? options : BindOptions.defaults();
     }
@@ -84,6 +99,97 @@ public final class EntityBinder<T> {
     /** Issues from the most recent bind on this binder (empty when clean). */
     public List<LoadIssue> lastLoadIssues() {
         return lastIssues;
+    }
+
+    // ---- WRITE: POJO -> tree (merge, never replace) --------------------
+
+    /**
+     * Project {@code pojo} to a tree and merge it into the canonical tree at the root. Unknown file keys,
+     * the comment overlay, and key order all survive; the POJO is the source of truth only for the keys
+     * it declares. Comments from {@code @Comment} are seeded (never written over a user edit). This
+     * mutates the in-memory tree only; persisting it is the backend's job.
+     */
+    public void writeEntity(final T pojo) {
+        mergeAndSeed(pojo, config.getRoot(), "");
+    }
+
+    /** Same as {@link #writeEntity}, scoped to the object at {@code path} (created if absent). */
+    public void writeEntityAt(final String path, final T pojo) {
+        final JsonNode existing = config.getNode(path);
+        final ObjectNode target;
+        if (existing instanceof ObjectNode) {
+            target = (ObjectNode) existing;
+        } else {
+            target = mapper.getNodeFactory().objectNode();
+            config.setValue(path, target);
+        }
+        mergeAndSeed(pojo, target, path);
+    }
+
+    private void mergeAndSeed(final T pojo, final ObjectNode target, final String basePath) {
+        final JsonNode candidate = mapper.valueToTree(pojo);
+        if (!(candidate instanceof ObjectNode)) {
+            throw new BindException("entity " + pojo.getClass().getName() + " did not serialize to an object");
+        }
+        SmartMerge.mergeInto(target, (ObjectNode) candidate, schema(), options);
+        seedCommentsFromAnnotations(pojo.getClass(), basePath);
+    }
+
+    private Schema schema() {
+        return SCHEMA_CACHES.computeIfAbsent(mapper, SchemaCache::new).of(type);
+    }
+
+    /**
+     * Seed comments declared by {@code @Comment} on the entity's fields (and the file header from a
+     * class-level {@code @Comment}) into the comment overlay, writing each only where no comment exists
+     * yet. A no-op when the codec cannot round-trip comments at all.
+     */
+    private void seedCommentsFromAnnotations(final Class<?> clazz, final String basePath) {
+        if (codec.commentFidelity() == CommentFidelity.NONE) {
+            return;
+        }
+        final CommentTree comments = config.getCommentTree();
+        final Comment classComment = clazz.getAnnotation(Comment.class);
+        if (classComment != null && basePath.isEmpty() && comments.getHeader().isEmpty()) {
+            comments.setHeader(Arrays.asList(classComment.value()));
+        }
+        for (final Field f : allFields(clazz)) {
+            final Comment c = f.getAnnotation(Comment.class);
+            if (c == null) {
+                continue;
+            }
+            final String key = resolveKey(f);
+            final String path = basePath.isEmpty() ? key : basePath + config.pathSeparator() + key;
+            if (!comments.hasUserComment(path)) {
+                comments.seedComment(path, String.join("\n", c.value()));
+            }
+        }
+    }
+
+    /** The on-disk key for a field, honoring {@code @Key} (rename + case) then {@code @JsonProperty}. */
+    private static String resolveKey(final Field f) {
+        final Key k = f.getAnnotation(Key.class);
+        if (k != null) {
+            final String base = k.value().isEmpty() ? f.getName() : k.value();
+            return k.transformCase().apply(base);
+        }
+        final JsonProperty jp = f.getAnnotation(JsonProperty.class);
+        if (jp != null && !jp.value().isEmpty()) {
+            return jp.value();
+        }
+        return f.getName();
+    }
+
+    private static List<Field> allFields(final Class<?> clazz) {
+        final List<Field> out = new ArrayList<>();
+        Class<?> c = clazz;
+        while (c != null && c != Object.class) {
+            for (final Field f : c.getDeclaredFields()) {
+                out.add(f);
+            }
+            c = c.getSuperclass();
+        }
+        return out;
     }
 
     private T doBind(final T base, final JsonNode source) {
