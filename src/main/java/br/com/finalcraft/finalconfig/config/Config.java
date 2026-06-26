@@ -2,6 +2,8 @@ package br.com.finalcraft.finalconfig.config;
 
 import br.com.finalcraft.finalconfig.binding.BindOptions;
 import br.com.finalcraft.finalconfig.binding.EntityBinder;
+import br.com.finalcraft.finalconfig.binding.IdIndexer;
+import br.com.finalcraft.finalconfig.binding.LoadIssue;
 import br.com.finalcraft.finalconfig.codec.Codec;
 import br.com.finalcraft.finalconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.finalconfig.config.section.ConfigSection;
@@ -13,10 +15,13 @@ import br.com.finalcraft.finalconfig.core.tree.Path;
 import br.com.finalcraft.finalconfig.core.tree.PathOptions;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
@@ -555,6 +560,18 @@ public class Config {
     public void mergeFrom(final Object pojo, final Codec codec) {
         final EntityBinder binder = bind(pojo.getClass(), codec);
         binder.writeEntity(pojo);
+    }
+
+    /** Store a collection of {@code @Id}-bearing entities at {@code path} as a section keyed by their id. */
+    public void writeIdCollection(final String path, final Collection<?> collection, final Codec codec) {
+        final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
+        setValue(path, IdIndexer.toIndexed(collection, mapper));
+    }
+
+    /** Read an {@code @Id}-indexed section at {@code path} back into a list, restoring each id from its key. */
+    public <T> List<T> readIdCollection(final String path, final Class<T> elementType, final Codec codec) {
+        final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
+        return IdIndexer.fromIndexed(getNode(path), elementType, mapper, new ArrayList<LoadIssue>());
     }
 
     // ==================== save-defaults bookkeeping ====================
