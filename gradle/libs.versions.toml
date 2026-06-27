@@ -1,0 +1,31 @@
+[versions]
+# Project version - single source of truth (consumed by build.gradle).
+finalconfig = "1.0.1"
+
+# Jackson is the serialization engine; one BOM pin governs the whole family.
+jackson = "2.18.5"
+jetbrains-annotations = "24.1.0"
+# Lombok 1.18.42+ is required to run on a Java 25 toolchain.
+lombok = "1.18.42"
+# Jabel lets a modern compiler emit Java 8 bytecode (fork that supports a Java 25 javac).
+jabel = "1.2.0"
+junit = "5.10.2"
+# The JUnit Platform launcher (Gradle 9 no longer provides it to test JVMs). 1.10.x pairs with Jupiter 5.10.x.
+junit-platform = "1.10.2"
+
+[libraries]
+jackson-bom = { module = "com.fasterxml.jackson:jackson-bom", version.ref = "jackson" }
+# Versions omitted below: the BOM governs them.
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind" }
+jackson-dataformat-yaml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml" }
+jackson-dataformat-toml = { module = "com.fasterxml.jackson.dataformat:jackson-dataformat-toml" }
+jackson-datatype-jsr310 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jsr310" }
+jackson-datatype-jdk8 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jdk8" }
+
+jetbrains-annotations = { module = "org.jetbrains:annotations", version.ref = "jetbrains-annotations" }
+lombok = { module = "org.projectlombok:lombok", version.ref = "lombok" }
+jabel = { module = "br.com.finalcraft:jabel", version.ref = "jabel" }
+
+junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
+junit-jupiter-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
