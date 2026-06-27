@@ -4,13 +4,14 @@ plugins {
 }
 
 group = 'br.com.finalcraft'
-version = '2.0.0-SNAPSHOT'
+version = '1.0.1'
 
 ext.jacksonVersion = '2.18.5'
 
 repositories {
+    mavenLocal()
     mavenCentral()
-    maven { url = 'https://jitpack.io' } // Jabel
+    maven { url = 'https://maven.petrus.dev/public' }
 }
 
 dependencies {
@@ -20,6 +21,7 @@ dependencies {
     api 'com.fasterxml.jackson.dataformat:jackson-dataformat-yaml'
     api 'com.fasterxml.jackson.dataformat:jackson-dataformat-toml'
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jdk8' // Optional<> support
 
     api 'org.jetbrains:annotations:24.1.0'
 
@@ -29,9 +31,9 @@ dependencies {
     testCompileOnly 'org.projectlombok:lombok:1.18.42'
     testAnnotationProcessor 'org.projectlombok:lombok:1.18.42'
 
-    // ---- Jabel: write Java 17 syntax, emit Java 8 bytecode ----
-    annotationProcessor 'com.github.bsideup.jabel:jabel-javac-plugin:0.4.2'
-    compileOnly 'com.github.bsideup.jabel:jabel-javac-plugin:0.4.2'
+    // ---- Jabel: write modern Java syntax, emit Java 8 bytecode ----
+    annotationProcessor 'br.com.finalcraft:jabel:1.2.0'
+    compileOnly 'br.com.finalcraft:jabel:1.2.0'
 
     // ---- Tests ----
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.2'
@@ -45,21 +47,22 @@ tasks.withType(JavaCompile).configureEach {
     options.compilerArgs.add('-parameters') // keep parameter names on the compiled jar
 }
 
-// A Java 17 toolchain runs Gradle's compile/test for this project regardless of the launching JDK, so
-// the build is reproducible no matter which JDK starts it.
+// One toolchain (Java 25) runs Gradle's compile/test for this project regardless of the launching JDK,
+// so the build is reproducible no matter which JDK starts it.
 java {
+    withSourcesJar()
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
-// Production code: Java 17 source syntax (Jabel lifts javac's source check) emitting Java 8 bytecode.
-// Pinned to a Java 17 compiler because Jabel rides javac internals that changed after JDK 17.
+// Production code: modern Java source syntax (Jabel lifts javac's source check) emitting Java 8 bytecode.
+// options.release = 8 keeps the API floor at Java 8 so no Java 9+ library APIs leak into production.
 compileJava {
-    sourceCompatibility = 17 // IDE hint only; options.release governs the actual compile
+    sourceCompatibility = 25 // IDE hint only; options.release governs the actual compile
     options.release = 8
     javaCompiler = javaToolchains.compilerFor {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
@@ -68,11 +71,33 @@ compileTestJava {
     options.release = 8
 }
 
-// The suite runs on Java 17 by default; pass -PtestJdk=8|11|17|21|25 to run it on another runtime.
-def testJdkVersion = (project.findProperty('testJdk') ?: '17').toString().toInteger()
+// The suite runs on Java 25 by default; pass -PtestJdk=8|11|17|21|25 to run it on another runtime.
+def testJdkVersion = (project.findProperty('testJdk') ?: '25').toString().toInteger()
 test {
     useJUnitPlatform()
     javaLauncher = javaToolchains.launcherFor {
         languageVersion = JavaLanguageVersion.of(testJdkVersion)
+    }
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = 'FinalConfig'
+            from components.java
+        }
+    }
+    repositories {
+        maven {
+            name = "PetrusRepo"
+            url = "https://maven.petrus.dev/public"
+            credentials {
+                username = System.env.PETRUSMAVEN_ACTOR
+                password = System.env.PETRUSMAVEN_TOKEN
+            }
+            authentication {
+                basic(BasicAuthentication)
+            }
+        }
     }
 }
