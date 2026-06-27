@@ -184,7 +184,9 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
     private String dumpValue(final Object value) {
         try {
             String s = mapper.writeValueAsString(value);
-            if (s.startsWith("---\n")) {
+            // Strip the document-start marker the dumper may prepend. It is "---\n" normally, but for a
+            // value that forces an explicit marker (e.g. an empty string -> "--- \"\"") it is "--- ".
+            if (s.startsWith("---\n") || s.startsWith("--- ")) {
                 s = s.substring(4);
             }
             while (s.endsWith("\n") || s.endsWith("\r")) {
