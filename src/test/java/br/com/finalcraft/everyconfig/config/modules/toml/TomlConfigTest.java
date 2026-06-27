@@ -40,7 +40,34 @@ class TomlConfigTest extends AbstractConfigTest {
 
     @Override
     protected boolean supportsNull() {
-        return false; // TOML has no null type
+        // TOML has no null type: a null-valued key is omitted on write, so it reads back absent (the
+        // collapse rule pinned by tomlNull_collapsesToAbsenceOnDisk). The abstract null tests assert the
+        // opposite (preservation), so they stay skipped here.
+        return false;
+    }
+
+    /**
+     * TOML's null contract: a null collapses to absence. In memory {@code setValue(path, null)} already
+     * removes the key (every codec), while an explicit null put straight into the tree survives in memory
+     * but is dropped on write — so after a disk round-trip the key is absent and a typed read returns the
+     * supplied default. A real-valued sibling proves only the null collapses.
+     */
+    @Test
+    @Order(201)
+    @DisplayName("[toml] an explicit null collapses to absence on a disk round-trip")
+    void tomlNull_collapsesToAbsenceOnDisk() {
+        final Config c = open();
+        c.setValue("a", 1);
+        c.setValue("z", null);            // collapses in memory for any codec
+        assertFalse(c.contains("z"));
+        c.getRoot().putNull("n");          // an explicit null that bypasses the setValue collapse
+        assertTrue(c.contains("n"));
+        c.save();
+
+        final Config r = open();
+        assertFalse(r.contains("n"));      // the null key is gone on disk (omitted by the emitter)
+        assertEquals(7, r.getInt("n", 7)); // a typed read of the absent key returns the supplied default
+        assertEquals(1, r.getInt("a"));    // the real-valued sibling survived
     }
 
     /**
