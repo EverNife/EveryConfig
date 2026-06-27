@@ -75,4 +75,21 @@ class IdCollectionTest {
         assertThrows(BindException.class,
                 () -> c.writeIdCollection("xs", Arrays.asList(new NoId()), codec));
     }
+
+    @Test
+    void readIdCollectionResultCarriesValueAndIssues() {
+        final Config c = new Config((ObjectNode) codec.readTree(
+                "{\"accounts\":{\"alice\":{\"name\":\"WRONG\",\"balance\":7}}}"));
+        final BindResult<List<Account>> r = c.readIdCollectionResult("accounts", Account.class, codec);
+        assertEquals(1, r.value().size());
+        assertEquals("alice", r.value().get(0).name);
+        assertTrue(r.hasIssues());                            // body id disagreed with the section key
+        assertEquals(r.issues(), c.lastIdCollectionIssues()); // same issues as the stateful channel
+
+        final Config clean = new Config();
+        clean.writeIdCollection("accounts", Arrays.asList(new Account("a", 1)), codec);
+        final BindResult<List<Account>> ok = clean.readIdCollectionResult("accounts", Account.class, codec);
+        assertFalse(ok.hasIssues());
+        assertTrue(ok.issues().isEmpty());
+    }
 }

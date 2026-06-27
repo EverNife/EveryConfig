@@ -121,4 +121,30 @@ class EntityBinderReadTest {
         assertEquals(Integer.valueOf(3), w.weights.get(2));
         assertEquals("weights[1]", binder.lastLoadIssues().get(0).key());
     }
+
+    @Test
+    void bindResultCarriesValueAndIssues() {
+        final EntityBinder<Cfg> binder = configFrom("{\"port\":\"NaN\",\"name\":\"x\"}").bind(Cfg.class, codec);
+        final BindResult<Cfg> r = binder.bindResult();
+        assertEquals(25565, r.value().port);                 // bad value skipped, default kept
+        assertEquals("x", r.value().name);
+        assertTrue(r.hasIssues());
+        assertEquals(r.issues(), binder.lastLoadIssues());   // the two channels agree
+        assertThrows(UnsupportedOperationException.class, () -> r.issues().add(null)); // snapshot is immutable
+    }
+
+    @Test
+    void loadAsResultExposesIssuesThatLoadAsHides() {
+        final BindResult<Cfg> r = configFrom("{\"port\":\"NaN\"}").loadAsResult(Cfg.class, codec);
+        assertEquals(25565, r.value().port);
+        assertTrue(r.hasIssues());
+    }
+
+    @Test
+    void bindResultIsCleanWhenNoIssues() {
+        final BindResult<Cfg> r = configFrom("{\"port\":2}").bind(Cfg.class, codec).bindResult();
+        assertEquals(2, r.value().port);
+        assertFalse(r.hasIssues());
+        assertTrue(r.issues().isEmpty());
+    }
 }

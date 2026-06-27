@@ -127,7 +127,18 @@ public final class EntityBinder<T> {
         return bind();
     }
 
-    /** Issues from the most recent bind on this binder (empty when clean). */
+    /**
+     * As {@link #bind()}, but returns the value together with the {@link LoadIssue}s collected for this
+     * call, so the issues travel with the value instead of having to be read afterward from the stateful
+     * {@link #lastLoadIssues()} (which a later bind would overwrite).
+     */
+    public BindResult<T> bindResult() {
+        final T v = bind();
+        return new BindResult<>(v, lastIssues);
+    }
+
+    /** Issues from the most recent bind on this binder (empty when clean); {@link #bindResult()} returns the
+     *  same issues alongside the value. */
     public List<LoadIssue> lastLoadIssues() {
         return lastIssues;
     }
