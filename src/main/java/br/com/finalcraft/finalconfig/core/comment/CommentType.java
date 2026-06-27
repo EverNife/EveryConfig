@@ -1,8 +1,8 @@
 package br.com.finalcraft.finalconfig.core.comment;
 
 /**
- * FinalConfig's own comment type (replacing {@code org.simpleyaml.configuration.comments.CommentType}).
- * BLOCK = comment lines above a key; SIDE = trailing comment after a value.
+ * Where a comment sits relative to its key. BLOCK = the comment lines above a key; SIDE = the trailing
+ * comment after a value on the same line.
  */
 public enum CommentType {
     BLOCK,
