@@ -1,6 +1,7 @@
 package br.com.finalcraft.finalconfig.binding;
 
 import br.com.finalcraft.finalconfig.annotation.Comment;
+import br.com.finalcraft.finalconfig.annotation.CommentMode;
 import br.com.finalcraft.finalconfig.annotation.Key;
 import br.com.finalcraft.finalconfig.annotation.KeyTransformCase;
 import br.com.finalcraft.finalconfig.annotation.PostInject;
@@ -18,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *  POJO drives its own fields, and comments (seeded + user) round-trip. */
 class BindingEndToEndTest {
 
-    @Comment("Connection settings")
+    @Comment(value = "Connection settings", mode = CommentMode.SET_IF_ABSENT)
     static class DbConfig {
         @Key(transformCase = KeyTransformCase.KEBAB_CASE)
         @Comment("JDBC url; edit me and your comment is kept")

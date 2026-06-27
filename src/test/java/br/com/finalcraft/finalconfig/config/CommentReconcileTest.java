@@ -25,7 +25,7 @@ class CommentReconcileTest {
         assertEquals("documented", c.getComment("a.b"));   // documentation seeded onto the existing key
     }
 
-    /** An existing authoritative comment is never clobbered by a seed. */
+    /** An existing comment is never clobbered by a default-comment write. */
     @Test
     void seedDoesNotOverrideAnExistingComment() {
         final ObjectNode root = JsonNodeFactory.instance.objectNode();
@@ -34,6 +34,22 @@ class CommentReconcileTest {
         c.setComment("k", "user comment");
         c.getOrSetDefaultValue("k", 2, "SEED IGNORED");
         assertEquals("user comment", c.getComment("k"));
+    }
+
+    /** The two fluent modes: setDefaultComment respects an existing comment, setComment overwrites it. */
+    @Test
+    void fluentSetDefaultCommentRespectsExistingButSetCommentOverwrites() {
+        final Config c = new Config();
+        c.setValue("k", 1);
+
+        c.setDefaultComment("k", "first");
+        assertEquals("first", c.getComment("k"));   // written: was absent
+
+        c.setDefaultComment("k", "second");
+        assertEquals("first", c.getComment("k"));   // kept: already present
+
+        c.setComment("k", "forced");
+        assertEquals("forced", c.getComment("k"));  // overwritten
     }
 
     /** A genuinely new path (absent at load) gets its seed on first write. */

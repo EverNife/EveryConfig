@@ -1,6 +1,7 @@
 package br.com.finalcraft.finalconfig.binding;
 
 import br.com.finalcraft.finalconfig.annotation.Comment;
+import br.com.finalcraft.finalconfig.annotation.CommentMode;
 import br.com.finalcraft.finalconfig.annotation.Key;
 import br.com.finalcraft.finalconfig.codec.jackson.JsonCodec;
 import br.com.finalcraft.finalconfig.codec.jackson.YamlCodec;
@@ -28,6 +29,9 @@ class EntityBinderWriteTest {
         public String url = "jdbc:h2:mem:test";
 
         public int maxPool = 10;
+
+        @Comment(value = "tune this", mode = CommentMode.SET_IF_ABSENT)
+        public int retries = 3;
     }
 
     static class WithMap {
@@ -72,11 +76,19 @@ class EntityBinderWriteTest {
     }
 
     @Test
-    void commentSeedDoesNotOverrideUserComment() {
+    void overrideCommentReplacesAnExistingComment() {
         final Config c = new Config();
-        c.setComment("jdbc-url", "USER WROTE THIS");
-        c.mergeFrom(new Db(), yaml);
-        assertEquals("USER WROTE THIS", c.getComment("jdbc-url"));
+        c.setComment("jdbc-url", "OLD");
+        c.mergeFrom(new Db(), yaml); // url's @Comment defaults to OVERRIDE
+        assertEquals("the JDBC url", c.getComment("jdbc-url"));
+    }
+
+    @Test
+    void setIfAbsentCommentPreservesAnExistingComment() {
+        final Config c = new Config();
+        c.setComment("retries", "USER WROTE THIS");
+        c.mergeFrom(new Db(), yaml); // retries' @Comment is SET_IF_ABSENT
+        assertEquals("USER WROTE THIS", c.getComment("retries"));
     }
 
     @Test

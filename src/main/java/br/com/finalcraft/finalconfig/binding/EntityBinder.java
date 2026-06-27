@@ -1,12 +1,14 @@
 package br.com.finalcraft.finalconfig.binding;
 
 import br.com.finalcraft.finalconfig.annotation.Comment;
+import br.com.finalcraft.finalconfig.annotation.CommentMode;
 import br.com.finalcraft.finalconfig.annotation.Section;
 import br.com.finalcraft.finalconfig.codec.Codec;
 import br.com.finalcraft.finalconfig.codec.CommentFidelity;
 import br.com.finalcraft.finalconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.finalconfig.config.Config;
 import br.com.finalcraft.finalconfig.core.comment.CommentTree;
+import br.com.finalcraft.finalconfig.core.comment.CommentType;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -239,7 +241,8 @@ public final class EntityBinder<T> {
         }
         final CommentTree comments = config.getCommentTree();
         final Comment classComment = clazz.getAnnotation(Comment.class);
-        if (classComment != null && basePath.isEmpty() && comments.getHeader().isEmpty()) {
+        if (classComment != null && basePath.isEmpty()
+                && (classComment.mode() == CommentMode.OVERRIDE || comments.getHeader().isEmpty())) {
             comments.setHeader(Arrays.asList(classComment.value()));
         }
         for (final Field f : BindingNames.allFields(clazz)) {
@@ -251,9 +254,11 @@ public final class EntityBinder<T> {
             final Section sec = f.getAnnotation(Section.class);
             final String fieldPath = (sec != null && !sec.value().isEmpty()) ? sec.value() + "." + key : key;
             final String path = basePath.isEmpty() ? fieldPath : basePath + config.pathSeparator() + fieldPath;
-            // Seed whenever the path carries no authoritative comment; a deleted comment is re-seeded.
-            if (!comments.hasUserComment(path)) {
-                comments.seedComment(path, String.join("\n", c.value()));
+            final String text = String.join("\n", c.value());
+            if (c.mode() == CommentMode.OVERRIDE) {
+                comments.setComment(path, text, CommentType.BLOCK); // documentation stays current
+            } else {
+                comments.setDefaultComment(path, text, CommentType.BLOCK); // user-edited comment wins
             }
         }
     }

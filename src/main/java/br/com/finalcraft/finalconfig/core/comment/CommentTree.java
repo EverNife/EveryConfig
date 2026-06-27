@@ -9,10 +9,8 @@ import java.util.Map;
 
 /**
  * Format-agnostic comment overlay keyed by dotted path. Each path may carry a block comment and a side
- * comment, each tagged with provenance: {@code seeded=false} means authoritative (parsed from the file,
- * or set explicitly via {@link #setComment}); {@code seeded=true} means it came from a code-supplied
- * default. The distinction is what lets a code default fill in a comment for a new key without ever
- * overwriting one the user wrote.
+ * comment. Two write modes are offered: {@link #setComment} always overwrites, and
+ * {@link #setDefaultComment} writes only when the path has no comment yet.
  *
  * <p>Besides comments, the overlay carries the vertical layout that the data tree cannot: the count of
  * blank lines kept above each key, and the file's header (above the first key) and footer (below the
@@ -26,9 +24,7 @@ public final class CommentTree {
 
     private static final class Entry {
         String block;
-        boolean blockSeeded;
         String side;
-        boolean sideSeeded;
         int blankLinesBefore;
     }
 
@@ -42,20 +38,13 @@ public final class CommentTree {
         return byPath.computeIfAbsent(path == null ? "" : path, k -> new Entry());
     }
 
-    // ---- load (authoritative, from file) ----
+    // ---- load (from file) ----
 
     public void putFileComment(final String path, final String comment, final CommentType type) {
-        final Entry e = entry(path);
-        if (type == CommentType.SIDE) {
-            e.side = comment;
-            e.sideSeeded = false;
-        } else {
-            e.block = comment;
-            e.blockSeeded = false;
-        }
+        setComment(path, comment, type);
     }
 
-    // ---- explicit API (authoritative) ----
+    // ---- write: always overwrite ----
 
     public void setComment(final String path, final String comment, final CommentType type) {
         if (comment == null) {
@@ -65,10 +54,17 @@ public final class CommentTree {
         final Entry e = entry(path);
         if (type == CommentType.SIDE) {
             e.side = comment;
-            e.sideSeeded = false;
         } else {
             e.block = comment;
-            e.blockSeeded = false;
+        }
+    }
+
+    // ---- write: only when nothing is there yet ----
+
+    /** Write the comment only when the path currently carries no comment of that type. */
+    public void setDefaultComment(final String path, final String comment, final CommentType type) {
+        if (comment != null && getComment(path, type) == null) {
+            setComment(path, comment, type);
         }
     }
 
@@ -90,24 +86,6 @@ public final class CommentTree {
         } else {
             e.block = null;
         }
-    }
-
-    // ---- seed (writes only if no authoritative comment exists) ----
-
-    /** Seed a BLOCK comment only when the path has no authoritative (file/explicit) comment yet. */
-    public void seedComment(final String path, final String comment) {
-        final Entry e = entry(path);
-        if (e.block != null && !e.blockSeeded) {
-            return; // user/file comment wins
-        }
-        e.block = comment;
-        e.blockSeeded = true;
-    }
-
-    /** True when the path carries an authoritative (file/explicit, non-seeded) block comment. */
-    public boolean hasUserComment(final String path) {
-        final Entry e = byPath.get(path == null ? "" : path);
-        return e != null && e.block != null && !e.blockSeeded;
     }
 
     // ---- vertical layout (blank lines kept above a key) ----

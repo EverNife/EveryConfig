@@ -428,6 +428,7 @@ public class Config implements AutoCloseable {
 
     // ==================== comment seam (seed-on-absent + pass-through) ====================
 
+    /** Set the comment, overwriting any existing one. */
     public void setComment(final String path, final String comment) {
         comments.setComment(path, comment, CommentType.BLOCK);
         dirty = true;
@@ -436,6 +437,18 @@ public class Config implements AutoCloseable {
     public void setComment(final String path, final String comment, final CommentType type) {
         comments.setComment(path, comment, type);
         dirty = true;
+    }
+
+    /** Set the comment only when {@code path} has none yet; an existing (e.g. user-edited) comment wins. */
+    public void setDefaultComment(final String path, final String comment) {
+        setDefaultComment(path, comment, CommentType.BLOCK);
+    }
+
+    public void setDefaultComment(final String path, final String comment, final CommentType type) {
+        if (comment != null && comments.getComment(path, type) == null) {
+            comments.setComment(path, comment, type);
+            dirty = true;
+        }
     }
 
     public String getComment(final String path) {
@@ -507,10 +520,9 @@ public class Config implements AutoCloseable {
     }
 
     private void seedCommentIfAbsent(final String path, final String comment) {
-        // Seed whenever the path has no authoritative comment. If the user deleted the comment, there is
-        // none, so it is written again — a code-supplied comment behaves as live documentation.
-        if (comment != null && !comments.hasUserComment(path)) {
-            comments.seedComment(path, comment);
+        // A default comment: written only when the path has none yet, so a user-edited comment wins.
+        if (comment != null && comments.getComment(path, CommentType.BLOCK) == null) {
+            comments.setComment(path, comment, CommentType.BLOCK);
             newDefaultValueToSave = true;
             dirty = true;
         }
