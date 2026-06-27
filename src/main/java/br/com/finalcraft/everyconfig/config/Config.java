@@ -626,8 +626,18 @@ public class Config implements AutoCloseable {
      * Never throws on a malformed file — a corrupt config must not block startup.
      */
     public static Config open(final java.nio.file.Path path, final Codec codec) {
+        return open(path, codec, Backend.Durability.OS_CACHE);
+    }
+
+    /**
+     * As {@link #open(java.nio.file.Path, Codec)}, but choosing how durably each {@link #save()} must land:
+     * {@link Backend.Durability#OS_CACHE} (the default) returns once the atomic rename is visible, while
+     * {@link Backend.Durability#FSYNC} forces the bytes to the storage device first (slower, crash-safe).
+     */
+    public static Config open(final java.nio.file.Path path, final Codec codec,
+                              final Backend.Durability durability) {
         final Config cfg = new Config();
-        cfg.backend = new AtomicFileBackend(path);
+        cfg.backend = new AtomicFileBackend(path, durability);
         cfg.lifecycleCodec = codec;
         cfg.bindCoercionTo(codec);
         cfg.loadInternal(true);

@@ -56,6 +56,17 @@ public interface Backend {
     /** Opens a watcher over this backend, or a no-op watcher if unsupported. */
     Watcher watch(Duration pollInterval, Runnable onExternalChange);
 
+    /**
+     * How durably {@link #writeAtomic} must land before it returns.
+     *
+     * <p>{@code OS_CACHE} (the default) returns as soon as the atomic rename is visible to other
+     * processes; the new bytes may still live only in the OS page cache, so an OS/power crash right after
+     * can lose the write entirely — but never corrupt the previous content, since the rename is atomic.
+     * {@code FSYNC} additionally forces the bytes (and the rename) to the storage device before returning,
+     * trading throughput for surviving a crash.
+     */
+    enum Durability { OS_CACHE, FSYNC }
+
     /** Immutable (mtime, size) pair; an absent file is {@code (0, -1)}. Value-equal by both fields. */
     final class Fingerprint {
 

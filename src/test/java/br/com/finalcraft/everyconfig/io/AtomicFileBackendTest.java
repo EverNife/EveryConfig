@@ -57,6 +57,30 @@ class AtomicFileBackendTest {
     }
 
     @Test
+    void fsyncDurabilityWritesAndReadsBack() throws IOException {
+        // FSYNC cannot be observed for its power-loss guarantee in a unit test; assert it is at least a
+        // correct no-op for the visible round-trip (the bytes land and read back exactly).
+        final AtomicFileBackend backend =
+                new AtomicFileBackend(dir.resolve("fsync.yml"), Backend.Durability.FSYNC);
+        final Backend.Fingerprint fp = backend.writeAtomic(bytes("durable: true\n"));
+        assertTrue(backend.exists());
+        assertArrayEquals(bytes("durable: true\n"), backend.readBytes());
+        assertEquals(bytes("durable: true\n").length, fp.size);
+
+        // Overwrite via FSYNC too, to exercise the replace-existing path under the forced mode.
+        backend.writeAtomic(bytes("durable: true\nmore: 1\n"));
+        assertArrayEquals(bytes("durable: true\nmore: 1\n"), backend.readBytes());
+    }
+
+    @Test
+    void defaultDurabilityIsOsCacheAndRoundTrips() throws IOException {
+        final AtomicFileBackend explicit =
+                new AtomicFileBackend(dir.resolve("oscache.yml"), Backend.Durability.OS_CACHE);
+        explicit.writeAtomic(bytes("k: v\n"));
+        assertArrayEquals(bytes("k: v\n"), explicit.readBytes());
+    }
+
+    @Test
     void fingerprintReflectsContentChange() throws IOException {
         final AtomicFileBackend backend = new AtomicFileBackend(dir.resolve("d.yml"));
         backend.writeAtomic(bytes("a: 1\n"));
