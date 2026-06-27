@@ -7,7 +7,7 @@ pluggable `Codec` turns text into that tree (and back), a format-agnostic commen
 writes comments, and typed entity binding is a derived view that merges into the tree rather than
 replacing it.
 
-- **Group / artifact:** `br.com.finalcraft:FinalConfig`  ·  **Version:** `2.0.0-SNAPSHOT`
+- **Group / artifact:** `br.com.finalcraft:FinalConfig`  ·  **Version:** `1.0.1`
 - **Root package:** `br.com.finalcraft.finalconfig`
 - Pure Java — no Bukkit/Spigot API, no EverNifeCore.
 
@@ -89,8 +89,9 @@ malformed file is backed up to `.bak` and the config starts empty (a corrupt fil
 
 ## Build & test
 
-Written in Java 17 syntax (via Jabel) and compiled to a **Java 8 bytecode floor** (`options.release = 8`).
-A Java 17 toolchain runs the build.
+Written in modern Java syntax (via Jabel) and compiled to a **Java 8 bytecode floor** (`options.release = 8`).
+A single Java 25 toolchain runs the build; the Jabel fork (`br.com.finalcraft:jabel`, from `mavenLocal()`)
+lets the Java 25 compiler emit Java 8 bytecode.
 
 ```powershell
 $env:JAVA_HOME = "<JDK_25_HOME>"
