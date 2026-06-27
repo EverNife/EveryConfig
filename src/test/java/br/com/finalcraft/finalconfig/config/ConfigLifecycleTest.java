@@ -81,6 +81,27 @@ class ConfigLifecycleTest {
         assertEquals(LoadStatus.OK, c.lastLoadStatus());
     }
 
+    /** Outside a watcher, a Config lives in memory: save() dumps memory and never reads the file first,
+     *  so an external edit is overwritten unless the caller reload()s to pick it up. */
+    @Test
+    void saveNeverReadsDiskAndOverwritesAnExternalEdit() throws IOException {
+        final Path file = dir.resolve("inmem.yml");
+        final Config c = Config.open(file, yaml);
+        c.setValue("a", 1);
+        c.save();
+
+        // The user edits the file by hand while the app holds the config in memory.
+        Files.write(file, "a: 999\nb: 2\n".getBytes(StandardCharsets.UTF_8));
+
+        // A save without a reload just dumps memory — the external edit is discarded.
+        c.setValue("a", 5);
+        c.save();
+
+        final Config reopened = Config.open(file, yaml);
+        assertEquals(5, reopened.getInt("a"));   // memory won
+        assertFalse(reopened.contains("b"));     // the hand-added 'b' was overwritten away
+    }
+
     @Test
     void reloadKeepsTreeAndFlagsDivergenceOnParseFailure() throws IOException {
         final Path file = dir.resolve("transient.yml");
