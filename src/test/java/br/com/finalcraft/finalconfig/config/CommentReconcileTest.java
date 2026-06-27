@@ -1,8 +1,20 @@
 package br.com.finalcraft.finalconfig.config;
 
+import br.com.finalcraft.finalconfig.codec.jackson.YamlCodec;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Path;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -10,6 +22,74 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 /** Decision-#1 reconciliation: a seed fires only the first time a path is written, and migration moves
  *  data + comment while marking the destination persisted. */
 class CommentReconcileTest {
+
+    @TempDir
+    Path dir;
+
+    @Data
+    @NoArgsConstructor
+    public static class EventDTO {
+        public String name;
+        public UUID id;
+        public int count;
+        public Instant instant;
+        public LocalDate localDate;
+        public LocalDateTime localDateTime;
+        public Duration duration;
+        public Date date;
+        public Timestamp timestamp;
+        public Optional<String> optionalPresent;
+        public Optional<String> optionalEmpty;
+        public OptionalInt optInt;
+        public String nullName;
+        public Map<String, Integer> counts;
+    }
+
+    /** 2026-06-25T14:30:00Z == 1_782_397_800 epoch-seconds == 1_782_397_800_000 epoch-millis. */
+    static EventDTO sample() {
+        EventDTO d = new EventDTO();
+        d.name = "Deploy";
+        d.id = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        d.count = 7;
+        d.instant = Instant.parse("2026-06-25T14:30:00Z");
+        d.localDate = LocalDate.of(2026, 6, 25);
+        d.localDateTime = LocalDateTime.of(2026, 6, 25, 14, 30, 0);
+        d.duration = Duration.ofSeconds(90);
+        d.date = Date.from(Instant.parse("2026-06-25T14:30:00Z"));
+        d.timestamp = Timestamp.from(Instant.parse("2026-06-25T14:30:00Z"));
+        d.optionalPresent = Optional.of("yes");
+        d.optionalEmpty = Optional.empty();
+        d.optInt = OptionalInt.of(5);
+        d.nullName = null;
+        d.counts = new LinkedHashMap<>();
+        d.counts.put("ok", 40);      // non-alphabetical insertion proves the canonical key ordering
+        d.counts.put("errors", 2);
+        return d;
+    }
+
+    /** An arbitrary POJO stored through the dynamic {@code setValue} (not the binding layer) serializes via
+     *  the codec's mapper — java.time, Optional/OptionalInt and Map order all survive a save+reopen. */
+    @Test
+    void richPojoAndCommentsRoundTripThroughTheDynamicApi() {
+        final YamlCodec yaml = new YamlCodec();
+        final Path file = dir.resolve("test.yml");
+
+        final Config config = Config.open(file, yaml);
+        config.setValue("Teste.Hermano", "Teste", "Teste\n\n\n\n\n1");
+        config.setDefaultComment("Teste.Hermano", "Default");
+        config.setValue("EventDTO", sample());
+        config.save();
+
+        final Config reopened = Config.open(file, yaml);
+        assertEquals("Teste", reopened.getString("Teste.Hermano"));
+        assertEquals("Deploy", reopened.getString("EventDTO.name"));
+        assertEquals("00000000-0000-0000-0000-000000000001", reopened.getString("EventDTO.id"));
+        assertEquals("2026-06-25T14:30:00Z", reopened.getString("EventDTO.instant"));
+        assertEquals("PT1M30S", reopened.getString("EventDTO.duration"));
+        assertEquals("yes", reopened.getString("EventDTO.optionalPresent")); // Optional unwrapped
+        assertEquals(5, reopened.getInt("EventDTO.optInt"));                  // OptionalInt unwrapped
+        assertEquals(40, reopened.getInt("EventDTO.counts.ok"));             // Map insertion order kept
+    }
 
     /** A code-supplied comment is documentation: it is (re)written whenever the path has no comment,
      *  including a pre-existing key that never had one, or one the user deleted. */

@@ -629,8 +629,22 @@ public class Config implements AutoCloseable {
         final Config cfg = new Config();
         cfg.backend = new AtomicFileBackend(path);
         cfg.lifecycleCodec = codec;
+        cfg.bindCoercionTo(codec);
         cfg.loadInternal(true);
         return cfg;
+    }
+
+    /**
+     * Wires the dynamic API's arbitrary-POJO escape to a codec's {@link ObjectMapper}, so
+     * {@code setValue(path, pojo)} can store any Jackson-serializable object (honoring the binding
+     * annotations) instead of throwing. Without a codec the escape stays unbound, since there is no
+     * mapper to decide how an unknown type serializes.
+     */
+    private void bindCoercionTo(final Codec codec) {
+        if (codec instanceof ObjectMapperAware) {
+            final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
+            coercion.setPojoToNode(mapper::valueToTree);
+        }
     }
 
     private void requireBackend() {
