@@ -40,6 +40,20 @@ class EntityBinderReadTest {
         }
     }
 
+    static class Nested {
+        public String label = "def";
+        public Inner inner = new Inner();
+
+        static class Inner {
+            public String url = "defUrl";
+            public int poolSize = 7;
+        }
+    }
+
+    static class WithList {
+        public List<Integer> weights;
+    }
+
     private final JsonCodec codec = new JsonCodec();
 
     private Config configFrom(final String json) {
@@ -83,5 +97,28 @@ class EntityBinderReadTest {
         assertNotNull(v.seen);
         assertTrue(v.seen.isEmpty());
         assertEquals(2, v.port);
+    }
+
+    @Test
+    void lenientIsolatesNestedBadValueByDottedKey() {
+        final EntityBinder<Nested> binder = configFrom(
+                "{\"label\":\"ok\",\"inner\":{\"url\":\"good\",\"poolSize\":\"NaN\"}}")
+                .bind(Nested.class, codec);
+        final Nested n = binder.bind();
+        assertEquals("ok", n.label);
+        assertEquals("good", n.inner.url);       // the good sibling still bound
+        assertEquals(7, n.inner.poolSize);       // the bad leaf kept its default
+        assertEquals(1, binder.lastLoadIssues().size());
+        assertEquals("inner.poolSize", binder.lastLoadIssues().get(0).key());
+    }
+
+    @Test
+    void lenientIsolatesBadListElementByIndexedKey() {
+        final EntityBinder<WithList> binder = configFrom("{\"weights\":[1,\"x\",3]}")
+                .bind(WithList.class, codec);
+        final WithList w = binder.bind();
+        assertEquals(Integer.valueOf(1), w.weights.get(0)); // good elements survive at their indices
+        assertEquals(Integer.valueOf(3), w.weights.get(2));
+        assertEquals("weights[1]", binder.lastLoadIssues().get(0).key());
     }
 }
