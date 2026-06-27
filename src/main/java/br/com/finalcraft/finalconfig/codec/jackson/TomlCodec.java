@@ -1,27 +1,40 @@
 package br.com.finalcraft.finalconfig.codec.jackson;
 
 import br.com.finalcraft.finalconfig.codec.Codec;
+import br.com.finalcraft.finalconfig.codec.CodecException;
 import br.com.finalcraft.finalconfig.codec.CommentAware;
 import br.com.finalcraft.finalconfig.codec.CommentFidelity;
 import br.com.finalcraft.finalconfig.codec.FCMapperProfiles;
 import br.com.finalcraft.finalconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.finalconfig.core.KeyOrder;
 import br.com.finalcraft.finalconfig.core.comment.CommentTree;
+import br.com.finalcraft.finalconfig.core.comment.CommentType;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
 /**
- * TOML codec — NOT IMPLEMENTED YET (placeholder driving the test suite).
+ * TOML codec ({@link CommentFidelity#LOSSLESS}, {@link CommentAware}). Data parsing and leaf-value
+ * serialization go through a Jackson {@link TomlMapper}, but the document STRUCTURE — bare {@code
+ * key = value} pairs, {@code [table.path]} headers for nested objects (a table's own scalars are emitted
+ * before its sub-tables, as TOML requires), key order and comment lines — is rendered by this codec's
+ * own emitter; the mapper never sees the whole tree.
  *
- * <p>Identity and the shared {@link ObjectMapper} are wired so that an in-memory bind round-trip and an
- * absent-file {@code Config.open} already work; but the text&lt;-&gt;tree operations (parsing, the
- * structure emitter, the comment overlay) throw until the real implementation lands. The companion
- * codec-contract tests are therefore expected to fail on every on-disk round-trip until then, which is
- * exactly the signal that should drive building this class out.
+ * <p>TOML has no null type, so a {@code null} value is omitted on write (see {@code supportsNull} on the
+ * config-contract tests). The comment + key-order overlay is recovered by a TEXT pass
+ * ({@link #readComments}); comment text is stored WITHOUT the {@code #} prefix and re-added when emitting.
  */
 public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
+
+    private static final char SEP = '.';
 
     /** One shared, isolated default mapper reused across every default-constructed instance. */
     private static final ObjectMapper DEFAULT = FCMapperProfiles.storageSafe(new TomlMapper());
@@ -58,46 +71,452 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
         return mapper;
     }
 
-    // ---- entity <-> tree (works today; shared mapper) -------------------
-
-    @Override
-    public <V> V treeToValue(final JsonNode node, final JavaType type) {
-        return mapper.convertValue(node, type);
-    }
-
-    @Override
-    public JsonNode valueToTree(final Object value) {
-        return mapper.valueToTree(value);
-    }
-
-    // ---- text <-> tree (NOT IMPLEMENTED) -------------------------------
+    // ---- text <-> tree --------------------------------------------------
 
     @Override
     public JsonNode readTree(final String text) {
-        throw notImplemented("readTree");
+        try {
+            return mapper.readTree(text);
+        } catch (final Exception e) {
+            throw new CodecException("failed to parse TOML", e);
+        }
     }
 
     @Override
     public String writeTreePlain(final JsonNode tree) {
-        throw notImplemented("writeTreePlain");
+        try {
+            return mapper.writeValueAsString(tree);
+        } catch (final Exception e) {
+            throw new CodecException("failed to write TOML", e);
+        }
     }
 
     @Override
+    public <V> V treeToValue(final JsonNode node, final JavaType type) {
+        try {
+            return mapper.convertValue(node, type);
+        } catch (final Exception e) {
+            throw new CodecException("failed to bind TOML node to " + type, e);
+        }
+    }
+
+    @Override
+    public JsonNode valueToTree(final Object value) {
+        try {
+            return mapper.valueToTree(value);
+        } catch (final Exception e) {
+            throw new CodecException("failed to project value to TOML tree", e);
+        }
+    }
+
+    // ---- CommentAware ---------------------------------------------------
+
+    @Override
     public CommentLoad readComments(final String text) {
-        throw notImplemented("readComments");
+        final CommentTree comments = parseComments(text);
+        final JsonNode data = readTree(text);
+        final KeyOrder order = (data instanceof ObjectNode)
+                ? KeyOrder.capture((ObjectNode) data, SEP)
+                : KeyOrder.empty();
+        return new CommentLoad(comments, order);
     }
 
     @Override
     public String writeWithComments(final JsonNode tree, final CommentTree commentTree, final KeyOrder keyOrder) {
-        throw notImplemented("writeWithComments");
+        if (!(tree instanceof ObjectNode)) {
+            throw new CodecException("TOML document root must be an object");
+        }
+        final CommentTree comments = commentTree != null ? commentTree : new CommentTree();
+        final KeyOrder order = keyOrder != null ? keyOrder : KeyOrder.empty();
+        final StringBuilder out = new StringBuilder();
+
+        final List<String> header = comments.getHeader();
+        for (final String line : header) {
+            out.append(prefixComment(line)).append('\n');
+        }
+        if (!header.isEmpty()) {
+            out.append('\n'); // blank line separates the header from the first entry
+        }
+
+        emitTable((ObjectNode) tree, "", out, comments, order);
+
+        final List<String> footer = comments.getFooter();
+        if (!footer.isEmpty()) {
+            out.append('\n');
+            for (final String line : footer) {
+                out.append(prefixComment(line)).append('\n');
+            }
+        }
+        return out.toString();
     }
 
     @Override
     public String writeScalar(final Object leaf) {
-        throw notImplemented("writeScalar");
+        final JsonNode node = (leaf instanceof JsonNode) ? (JsonNode) leaf : mapper.valueToTree(leaf);
+        if (node.isObject() && node.size() > 0) {
+            throw new CodecException(
+                    "writeScalar received a populated object; the emitter must emit it as a [table]");
+        }
+        if (node.isIntegralNumber()) {
+            return integerToken(node);
+        }
+        return dumpInline(node);
     }
 
-    private static UnsupportedOperationException notImplemented(final String op) {
-        return new UnsupportedOperationException("TomlCodec." + op + " is not implemented yet");
+    // ---- structure emitter ---------------------------------------------
+
+    /**
+     * Emits a table's body: its own scalar/array keys first (as {@code key = value}), then each child
+     * object as a {@code [path]} section (depth-first). A {@code null} value is omitted (TOML has no null).
+     */
+    private void emitTable(final ObjectNode node, final String path, final StringBuilder out,
+                           final CommentTree comments, final KeyOrder order) {
+        final List<String> scalars = new ArrayList<>();
+        final List<String> tables = new ArrayList<>();
+        for (final String key : orderedFieldNames(node, path, order)) {
+            final JsonNode v = node.get(key);
+            if (v != null && v.isObject() && v.size() > 0) {
+                tables.add(key);
+            } else if (v != null && !v.isNull()) {
+                scalars.add(key);
+            }
+        }
+
+        for (final String key : scalars) {
+            final String p = path.isEmpty() ? key : path + SEP + key;
+            emitLeadingComments(p, out, comments);
+            out.append(keyToken(key)).append(" = ").append(writeScalar(node.get(key)));
+            final String side = comments.getComment(p, CommentType.SIDE);
+            if (side != null) {
+                out.append(' ').append(prefixComment(side));
+            }
+            out.append('\n');
+        }
+
+        for (final String key : tables) {
+            final String p = path.isEmpty() ? key : path + SEP + key;
+            emitLeadingComments(p, out, comments);
+            out.append('[').append(tablePath(p)).append(']').append('\n');
+            emitTable((ObjectNode) node.get(key), p, out, comments, order);
+        }
+    }
+
+    private void emitLeadingComments(final String path, final StringBuilder out, final CommentTree comments) {
+        for (int b = comments.getBlankLinesBefore(path); b > 0; b--) {
+            out.append('\n');
+        }
+        final String block = comments.getComment(path, CommentType.BLOCK);
+        if (block != null) {
+            for (final String commentLine : block.split("\n", -1)) {
+                out.append(prefixComment(commentLine)).append('\n');
+            }
+        }
+    }
+
+    /** Captured key order first (for keys still present), then any live keys not in the snapshot. */
+    private List<String> orderedFieldNames(final ObjectNode node, final String parentPath, final KeyOrder order) {
+        final List<String> result = new ArrayList<>();
+        final Set<String> live = new LinkedHashSet<>();
+        node.fieldNames().forEachRemaining(live::add);
+        for (final String k : order.orderedKeys(parentPath)) {
+            if (live.contains(k)) {
+                result.add(k);
+            }
+        }
+        for (final String k : live) {
+            if (!result.contains(k)) {
+                result.add(k);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Renders an integer, guarding against a mapper limitation: the TOML reader mis-parses some large
+     * integers (it drops high digits), so an integer whose written form does not read back identically is
+     * emitted as a quoted string instead. A consumer still reads it as digits (the numeric getters accept
+     * a number stored as a string), and small integers — the common case — are emitted normally.
+     */
+    private String integerToken(final JsonNode node) {
+        final java.math.BigInteger value = node.bigIntegerValue();
+        if (value.bitLength() <= 31) {
+            return dumpInline(node); // fits an int comfortably; never affected
+        }
+        final String inline = dumpInline(node);
+        try {
+            final JsonNode back = mapper.readTree("v = " + inline).get("v");
+            if (back != null && back.isIntegralNumber() && back.bigIntegerValue().equals(value)) {
+                return inline; // the reader round-trips this magnitude faithfully
+            }
+        } catch (final Exception ignored) {
+            // fall through to the string fallback
+        }
+        return dumpInline(mapper.getNodeFactory().textNode(value.toString()));
+    }
+
+    /**
+     * Serialize a single leaf to its TOML inline form by wrapping it in a throwaway key and taking the
+     * text after {@code =}. This routes scalars (and inline arrays) through the mapper for correct
+     * quoting/number/array rendering without hand-writing TOML value syntax.
+     */
+    private String dumpInline(final JsonNode node) {
+        try {
+            final ObjectNode wrap = mapper.createObjectNode();
+            wrap.set("v", node);
+            final String s = mapper.writeValueAsString(wrap); // "v = <value>\n"
+            final int eq = s.indexOf('=');
+            return (eq >= 0 ? s.substring(eq + 1) : s).trim();
+        } catch (final Exception e) {
+            throw new CodecException("failed to dump TOML value", e);
+        }
+    }
+
+    // ---- comment text parser (text pass, no mapper) --------------------
+
+    private CommentTree parseComments(final String toml) {
+        final CommentTree tree = new CommentTree();
+        final List<String> pending = new ArrayList<>();
+        String currentTable = "";
+        boolean firstSeen = false;
+
+        for (final String raw : toml.split("\n", -1)) {
+            final String line = raw.endsWith("\r") ? raw.substring(0, raw.length() - 1) : raw;
+            final String trimmed = line.trim();
+
+            if (trimmed.isEmpty()) {
+                pending.add("");
+                continue;
+            }
+            if (trimmed.charAt(0) == '#') {
+                pending.add(trimmed);
+                continue;
+            }
+
+            if (trimmed.charAt(0) == '[') {
+                final boolean arrayTable = trimmed.startsWith("[[");
+                final int close = trimmed.indexOf(arrayTable ? "]]" : "]");
+                final String inner = trimmed.substring(arrayTable ? 2 : 1,
+                        close < 0 ? trimmed.length() : close).trim();
+                final String path = tablePathToInternal(inner);
+                assignComments(tree, path, peelHeaderIfFirst(tree, pending, firstSeen));
+                firstSeen = true;
+                pending.clear();
+                currentTable = path;
+                continue;
+            }
+
+            final int eq = keyEquals(trimmed);
+            if (eq < 0) {
+                pending.clear();
+                continue;
+            }
+            final String key = unquote(trimmed.substring(0, eq).trim());
+            final String path = currentTable.isEmpty() ? key : currentTable + SEP + key;
+            assignComments(tree, path, peelHeaderIfFirst(tree, pending, firstSeen));
+            firstSeen = true;
+            pending.clear();
+
+            final String value = trimmed.substring(eq + 1);
+            final int hash = sideHash(value);
+            if (hash >= 0) {
+                tree.putFileComment(path, stripComment(value.substring(hash).trim()), CommentType.SIDE);
+            }
+        }
+
+        final List<String> footer = extractBlockLines(pending);
+        if (!footer.isEmpty()) {
+            tree.setFooter(footer);
+        }
+        return tree;
+    }
+
+    /**
+     * Before the first entry, the leading comment block may be a file header (a comment block followed by
+     * a blank line) rather than the entry's own comment; peel it off and return the entry's own pending.
+     */
+    private List<String> peelHeaderIfFirst(final CommentTree tree, final List<String> pending, final boolean firstSeen) {
+        if (firstSeen) {
+            return pending;
+        }
+        final int boundary = headerBoundary(pending);
+        if (boundary >= 0) {
+            tree.setHeader(extractBlockLines(pending.subList(0, boundary)));
+            return new ArrayList<>(pending.subList(boundary + 1, pending.size()));
+        }
+        return pending;
+    }
+
+    private void assignComments(final CommentTree tree, final String path, final List<String> pend) {
+        int leadingBlanks = 0;
+        while (leadingBlanks < pend.size() && pend.get(leadingBlanks).isEmpty()) {
+            leadingBlanks++;
+        }
+        tree.setBlankLinesBefore(path, leadingBlanks);
+        final List<String> block = extractBlockLines(pend);
+        if (!block.isEmpty()) {
+            tree.putFileComment(path, String.join("\n", block), CommentType.BLOCK);
+        }
+    }
+
+    private static int headerBoundary(final List<String> pending) {
+        boolean sawComment = false;
+        for (int i = 0; i < pending.size(); i++) {
+            if (pending.get(i).isEmpty()) {
+                if (sawComment) {
+                    return i;
+                }
+            } else {
+                sawComment = true;
+            }
+        }
+        return -1;
+    }
+
+    private static List<String> extractBlockLines(final List<String> raw) {
+        int start = 0;
+        int end = raw.size();
+        while (start < end && raw.get(start).isEmpty()) {
+            start++;
+        }
+        while (end > start && raw.get(end - 1).isEmpty()) {
+            end--;
+        }
+        final List<String> out = new ArrayList<>();
+        for (int i = start; i < end; i++) {
+            out.add(stripComment(raw.get(i)));
+        }
+        return out;
+    }
+
+    // ---- token / path helpers ------------------------------------------
+
+    /** A TOML bare key when it matches {@code [A-Za-z0-9_-]+}, otherwise a quoted key. */
+    private String keyToken(final String key) {
+        if (isBareKey(key)) {
+            return key;
+        }
+        return dumpInline(mapper.getNodeFactory().textNode(key));
+    }
+
+    /** A dotted table path with each segment bare-or-quoted, e.g. {@code database.pool}. */
+    private String tablePath(final String internalPath) {
+        final String[] segments = internalPath.split("\\.");
+        final StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < segments.length; i++) {
+            if (i > 0) {
+                sb.append('.');
+            }
+            sb.append(keyToken(segments[i]));
+        }
+        return sb.toString();
+    }
+
+    /** Parse a {@code [a.b."c d"]} header's inner text back into a dotted internal path. */
+    private static String tablePathToInternal(final String inner) {
+        final List<String> segments = new ArrayList<>();
+        final StringBuilder cur = new StringBuilder();
+        boolean inString = false;
+        char quote = 0;
+        for (int i = 0; i < inner.length(); i++) {
+            final char c = inner.charAt(i);
+            if (inString) {
+                if (c == quote) {
+                    inString = false;
+                } else {
+                    cur.append(c);
+                }
+            } else if (c == '"' || c == '\'') {
+                inString = true;
+                quote = c;
+            } else if (c == '.') {
+                segments.add(cur.toString().trim());
+                cur.setLength(0);
+            } else {
+                cur.append(c);
+            }
+        }
+        segments.add(cur.toString().trim());
+        return String.join(".", segments);
+    }
+
+    private static boolean isBareKey(final String key) {
+        if (key.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < key.length(); i++) {
+            final char c = key.charAt(i);
+            final boolean ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                    || (c >= '0' && c <= '9') || c == '_' || c == '-';
+            if (!ok) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Index of the {@code =} separating a key from its value (not inside a quoted key), or -1. */
+    private static int keyEquals(final String s) {
+        boolean inString = false;
+        char quote = 0;
+        for (int i = 0; i < s.length(); i++) {
+            final char c = s.charAt(i);
+            if (inString) {
+                if (c == quote) {
+                    inString = false;
+                }
+            } else if (c == '"' || c == '\'') {
+                inString = true;
+                quote = c;
+            } else if (c == '=') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** First {@code #} starting a side comment (preceded by a space, not inside a string), or -1. */
+    private static int sideHash(final String after) {
+        boolean inString = false;
+        char quote = 0;
+        for (int i = 0; i < after.length(); i++) {
+            final char c = after.charAt(i);
+            if (inString) {
+                if (c == quote) {
+                    inString = false;
+                }
+            } else if (c == '"' || c == '\'') {
+                inString = true;
+                quote = c;
+            } else if (c == '#' && (i == 0 || after.charAt(i - 1) == ' ')) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static String unquote(final String key) {
+        if (key.length() >= 2) {
+            final char a = key.charAt(0);
+            final char b = key.charAt(key.length() - 1);
+            if ((a == '"' && b == '"') || (a == '\'' && b == '\'')) {
+                return key.substring(1, key.length() - 1);
+            }
+        }
+        return key;
+    }
+
+    private static String prefixComment(final String line) {
+        return line.isEmpty() ? "#" : "# " + line;
+    }
+
+    private static String stripComment(final String line) {
+        String s = line;
+        if (s.startsWith("#")) {
+            s = s.substring(1);
+        }
+        if (s.startsWith(" ")) {
+            s = s.substring(1);
+        }
+        return s;
     }
 }
