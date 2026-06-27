@@ -115,16 +115,22 @@ dependencies {
 ## Quick start
 
 ```java
-import br.com.finalcraft.finalconfig.config.Config;
-import br.com.finalcraft.finalconfig.codec.jackson.YamlCodec;
+import br.com.finalcraft.everyconfig.config.Config;
+import br.com.finalcraft.everyconfig.codec.jackson.YamlCodec;
+
 import java.nio.file.Paths;
 
 Config cfg = Config.open(Paths.get("server.yml"), new YamlCodec());
 
-cfg.setValue("server.host", "localhost");
+cfg.
+
+setValue("server.host","localhost");
+
 int port = cfg.getOrSetDefaultValue("server.port", 25565, "the listen port"); // seeds value + comment if absent
 
-cfg.save(); // atomic write; comments + key order preserved
+cfg.
+
+save(); // atomic write; comments + key order preserved
 ```
 
 Switching format is a one-line change — everything below `Config.open(...)` stays identical:
