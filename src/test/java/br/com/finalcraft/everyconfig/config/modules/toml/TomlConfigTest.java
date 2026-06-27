@@ -4,12 +4,14 @@ import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.jackson.TomlCodec;
 import br.com.finalcraft.everyconfig.config.Config;
+import br.com.finalcraft.everyconfig.config.data.Dtos;
 import br.com.finalcraft.everyconfig.config.modules.AbstractConfigTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -94,5 +96,55 @@ class TomlConfigTest extends AbstractConfigTest {
         final Config r = open();
         assertEquals(Long.MAX_VALUE, r.getLong("k"));
         assertEquals("9223372036854775807", r.getString("k"));
+    }
+
+    /**
+     * A list of non-empty objects is written in TOML's idiomatic {@code [[array-of-tables]]} form (repeated
+     * {@code [[path]]} blocks), not a single-line inline array of inline tables.
+     */
+    @Test
+    @Order(202)
+    @DisplayName("[toml] a list of POJOs is emitted as [[array-of-tables]]")
+    void listOfPojos_emittedAsArrayOfTables() throws IOException {
+        final Dtos.ListOfPojoPojo.Server s1 = new Dtos.ListOfPojoPojo.Server();
+        s1.name = "alpha";
+        s1.port = 1;
+        final Dtos.ListOfPojoPojo.Server s2 = new Dtos.ListOfPojoPojo.Server();
+        s2.name = "beta";
+        s2.port = 2;
+        final Dtos.ListOfPojoPojo p = new Dtos.ListOfPojoPojo();
+        p.title = "cluster";
+        p.servers = Arrays.asList(s1, s2);
+
+        final Config c = open();
+        c.setValue("cfg", p);
+        c.save();
+
+        final String text = readText();
+        final int first = text.indexOf("[[cfg.servers]]");
+        assertTrue(first >= 0, "expected idiomatic [[cfg.servers]] blocks");
+        assertTrue(text.indexOf("[[cfg.servers]]", first + 1) > first,
+                "expected one [[cfg.servers]] per element");
+        assertFalse(text.contains("servers = ["), "should not fall back to an inline array of inline tables");
+    }
+
+    /** Scalar arrays and an empty object-list keep the inline form ([[path]] can't express an empty body). */
+    @Test
+    @Order(203)
+    @DisplayName("[toml] scalar arrays and empty lists stay inline")
+    void scalarAndEmptyArrays_stayInline() throws IOException {
+        final Config c = open();
+        c.setValue("nums", Arrays.asList(1, 2, 3));
+        c.setValue("empty", Arrays.asList());
+        c.save();
+
+        final String text = readText();
+        assertTrue(text.contains("nums = ["), "a scalar array stays an inline array");
+        assertFalse(text.contains("[[nums]]"), "a scalar array must not become an array-of-tables");
+        assertFalse(text.contains("[[empty]]"), "an empty list must not become an array-of-tables");
+
+        final Config r = open();
+        assertEquals(3, r.getList("nums").size());
+        assertEquals(0, r.getList("empty").size());
     }
 }

@@ -77,6 +77,21 @@ public final class Dtos {
         public Map<String, Integer> limits;
     }
 
+    /** A list whose every element is a non-empty object (exercises TOML's {@code [[array-of-tables]]}). */
+    @Data
+    @NoArgsConstructor
+    public static class ListOfPojoPojo {
+        public String title;
+        public List<Server> servers;
+
+        @Data
+        @NoArgsConstructor
+        public static class Server {
+            public String name;
+            public int port;
+        }
+    }
+
     /** java.time spread (jsr310). */
     @Data
     @NoArgsConstructor

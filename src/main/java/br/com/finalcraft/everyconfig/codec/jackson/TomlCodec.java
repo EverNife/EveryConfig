@@ -165,18 +165,25 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
     // ---- structure emitter ---------------------------------------------
 
     /**
-     * Emits a table's body: its own scalar/array keys first (as {@code key = value}), then each child
-     * object as a {@code [path]} section (depth-first). A {@code null} value is omitted (TOML has no null).
+     * Emits a table's body: its own scalar/array keys first (as {@code key = value}), then each sub-section
+     * (a child object as a {@code [path]} table, or a list of non-empty objects as repeated
+     * {@code [[path]]} array-of-tables) in captured order, depth-first. TOML requires bare key/value pairs
+     * before sub-sections, so scalars are emitted first; object tables and array-of-tables share one
+     * ordered pass so their relative file order is preserved. A {@code null} value is omitted (TOML has no
+     * null).
      */
     private void emitTable(final ObjectNode node, final String path, final StringBuilder out,
                            final CommentTree comments, final KeyOrder order) {
         final List<String> scalars = new ArrayList<>();
-        final List<String> tables = new ArrayList<>();
+        final List<String> subSections = new ArrayList<>();
         for (final String key : orderedFieldNames(node, path, order)) {
             final JsonNode v = node.get(key);
-            if (v != null && v.isObject() && v.size() > 0) {
-                tables.add(key);
-            } else if (v != null && !v.isNull()) {
+            if (v == null || v.isNull()) {
+                continue;
+            }
+            if ((v.isObject() && v.size() > 0) || isArrayOfTables(v)) {
+                subSections.add(key);
+            } else {
                 scalars.add(key);
             }
         }
@@ -192,12 +199,40 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
             out.append('\n');
         }
 
-        for (final String key : tables) {
+        for (final String key : subSections) {
             final String p = path.isEmpty() ? key : path + SEP + key;
+            final JsonNode v = node.get(key);
             emitLeadingComments(p, out, comments);
-            out.append('[').append(tablePath(p)).append(']').append('\n');
-            emitTable((ObjectNode) node.get(key), p, out, comments, order);
+            if (v.isObject()) {
+                out.append('[').append(tablePath(p)).append(']').append('\n');
+                emitTable((ObjectNode) v, p, out, comments, order);
+            } else {
+                // A list of non-empty objects renders as the idiomatic repeated [[path]] form; each element
+                // is a fresh table body under the same path.
+                for (final JsonNode element : v) {
+                    out.append("[[").append(tablePath(p)).append("]]").append('\n');
+                    emitTable((ObjectNode) element, p, out, comments, order);
+                }
+            }
         }
+    }
+
+    /**
+     * True when an array can be written as {@code [[path]]} array-of-tables: it must be non-empty and every
+     * element a non-empty object. An empty array, or an element that is a scalar or an empty object, would
+     * alias to an empty body on re-read (a bare {@code [[path]]} parses back as one empty object), so those
+     * stay on the inline path instead.
+     */
+    private static boolean isArrayOfTables(final JsonNode v) {
+        if (v == null || !v.isArray() || v.size() == 0) {
+            return false;
+        }
+        for (final JsonNode element : v) {
+            if (!element.isObject() || element.size() == 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void emitLeadingComments(final String path, final StringBuilder out, final CommentTree comments) {
