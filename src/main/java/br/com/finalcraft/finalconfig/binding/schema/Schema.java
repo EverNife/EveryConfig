@@ -1,4 +1,4 @@
-package br.com.finalcraft.finalconfig.binding;
+package br.com.finalcraft.finalconfig.binding.schema;
 
 import java.util.Collections;
 import java.util.Set;

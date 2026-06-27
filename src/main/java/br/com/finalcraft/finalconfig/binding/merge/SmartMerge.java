@@ -1,4 +1,6 @@
-package br.com.finalcraft.finalconfig.binding;
+package br.com.finalcraft.finalconfig.binding.merge;
+import br.com.finalcraft.finalconfig.binding.BindOptions;
+import br.com.finalcraft.finalconfig.binding.schema.Schema;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -15,12 +17,12 @@ import java.util.List;
  * only under an explicit REMOVE policy and only at a level the schema fully owns — never inside a
  * free-form map.
  */
-final class SmartMerge {
+public final class SmartMerge {
 
     private SmartMerge() {
     }
 
-    static void mergeInto(final ObjectNode canonical, final ObjectNode candidate,
+    public static void mergeInto(final ObjectNode canonical, final ObjectNode candidate,
                           final Schema schema, final BindOptions options) {
         final Iterator<String> names = candidate.fieldNames();
         while (names.hasNext()) {

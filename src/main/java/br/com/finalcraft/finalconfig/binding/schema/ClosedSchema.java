@@ -1,4 +1,4 @@
-package br.com.finalcraft.finalconfig.binding;
+package br.com.finalcraft.finalconfig.binding.schema;
 
 import com.fasterxml.jackson.databind.JavaType;
 

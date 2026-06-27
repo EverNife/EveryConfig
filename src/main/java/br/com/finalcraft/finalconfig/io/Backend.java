@@ -1,4 +1,4 @@
-package br.com.finalcraft.finalconfig.backend;
+package br.com.finalcraft.finalconfig.io;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
