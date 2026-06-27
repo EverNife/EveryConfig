@@ -1,10 +1,16 @@
 package br.com.finalcraft.finalconfig.config;
 
+import br.com.finalcraft.finalconfig.backend.AtomicFileBackend;
+import br.com.finalcraft.finalconfig.backend.Backend;
+import br.com.finalcraft.finalconfig.backend.ConfigExecutor;
 import br.com.finalcraft.finalconfig.binding.BindOptions;
 import br.com.finalcraft.finalconfig.binding.EntityBinder;
 import br.com.finalcraft.finalconfig.binding.IdIndexer;
 import br.com.finalcraft.finalconfig.binding.LoadIssue;
 import br.com.finalcraft.finalconfig.codec.Codec;
+import br.com.finalcraft.finalconfig.codec.CommentAware;
+import br.com.finalcraft.finalconfig.codec.CommentFidelity;
+import br.com.finalcraft.finalconfig.codec.CodecException;
 import br.com.finalcraft.finalconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.finalconfig.config.section.ConfigSection;
 import br.com.finalcraft.finalconfig.core.KeyOrder;
@@ -20,6 +26,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -29,6 +36,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * The dynamic configuration handle: a thin wrapper over a canonical, mutable Jackson {@link ObjectNode}
@@ -41,14 +50,24 @@ import java.util.UUID;
  * read) require caller synchronization. {@link #getRoot()} exposes the tree directly as the escape
  * hatch for callers that want raw Jackson access.
  */
-public class Config {
+public class Config implements AutoCloseable {
 
-    private final ObjectNode root;
-    private final CommentTree comments;
-    private final KeyOrder fileKeyOrder;
+    private ObjectNode root;
+    private CommentTree comments;
+    private KeyOrder fileKeyOrder;
     private final JsonNodeFactory nodes;
     private final PathOptions pathOptions;
     private final NodeCoercion coercion;
+
+    // ---- lifecycle (null for an in-memory Config not opened over a file) ----
+    private final ReentrantLock lock = new ReentrantLock(true);
+    private Backend backend;
+    private Codec lifecycleCodec;
+    private volatile Backend.Fingerprint loaded = Backend.Fingerprint.ABSENT;
+    private volatile LoadStatus lastLoadStatus = LoadStatus.NEVER_LOADED;
+    private boolean dirty = false;
+    private Backend.Watcher watcher;
+    private volatile Runnable onReload;
 
     /**
      * The paths that already existed in the tree when this config was loaded — the oracle for "is this
@@ -200,6 +219,7 @@ public class Config {
             comments.removeSubtree(path); // replacing a subtree drops its descendants' comments
         }
         pk.parent.set(pk.key, node);
+        dirty = true;
     }
 
     public void setValue(final String path, final Object value, final String comment) {
@@ -210,6 +230,7 @@ public class Config {
     }
 
     private void setRoot(final Object value) {
+        dirty = true;
         if (value == null) {
             root.removeAll();
             comments.removeSubtree("");
@@ -241,6 +262,7 @@ public class Config {
         }
         if (removed) {
             comments.removeSubtree(path);
+            dirty = true;
         }
         return removed;
     }
@@ -422,10 +444,12 @@ public class Config {
 
     public void setComment(final String path, final String comment) {
         comments.setComment(path, comment, CommentType.BLOCK);
+        dirty = true;
     }
 
     public void setComment(final String path, final String comment, final CommentType type) {
         comments.setComment(path, comment, type);
+        dirty = true;
     }
 
     public String getComment(final String path) {
@@ -507,6 +531,7 @@ public class Config {
         if (comment != null && !loadedPaths.contains(path) && !comments.hasUserComment(path)) {
             comments.seedComment(path, comment);
             newDefaultValueToSave = true;
+            dirty = true;
         }
     }
 
@@ -596,6 +621,210 @@ public class Config {
 
     public void clearNewDefaultValueToSave() {
         newDefaultValueToSave = false;
+    }
+
+    // ==================== lifecycle (backend-backed) ====================
+
+    /**
+     * Opens a Config over a file. If the file parses, its contents become the tree; if it exists but
+     * cannot be parsed, it is backed up to {@code .bak} and an empty tree is used (the file is not
+     * overwritten); if it is absent, an empty tree is used and the first {@link #save()} creates it.
+     * Never throws on a malformed file — a corrupt config must not block startup.
+     */
+    public static Config open(final java.nio.file.Path path, final Codec codec) {
+        final Config cfg = new Config();
+        cfg.backend = new AtomicFileBackend(path);
+        cfg.lifecycleCodec = codec;
+        cfg.loadInternal(true);
+        return cfg;
+    }
+
+    private void requireBackend() {
+        if (backend == null || lifecycleCodec == null) {
+            throw new IllegalStateException("this Config has no backend; build it with Config.open(path, codec)");
+        }
+    }
+
+    private void loadInternal(final boolean backupOnParseFail) {
+        byte[] bytes;
+        try {
+            bytes = backend.readBytes();
+        } catch (final IOException e) {
+            throw new ConfigIOException("failed to read " + backend.describe(), e);
+        }
+        if (bytes == null || bytes.length == 0) {
+            applyLoaded(nodes.objectNode(), new CommentTree(), KeyOrder.empty());
+            lastLoadStatus = (bytes == null) ? LoadStatus.ABSENT : LoadStatus.EMPTY;
+        } else {
+            try {
+                decodeInto(bytes);
+                lastLoadStatus = LoadStatus.OK;
+            } catch (final CodecException parseFail) {
+                if (backupOnParseFail) {
+                    safeBackup();
+                }
+                applyLoaded(nodes.objectNode(), new CommentTree(), KeyOrder.empty());
+                lastLoadStatus = LoadStatus.PARSE_FAILED_BACKED_UP;
+            }
+        }
+        loaded = backend.fingerprint();
+    }
+
+    private void decodeInto(final byte[] bytes) {
+        final String text = new String(bytes, backend.charset());
+        final JsonNode tree = lifecycleCodec.readTree(text);
+        final ObjectNode newRoot = (tree instanceof ObjectNode) ? (ObjectNode) tree : nodes.objectNode();
+        final CommentTree newComments;
+        final KeyOrder newOrder;
+        if (lifecycleCodec instanceof CommentAware) {
+            final CommentAware.CommentLoad load = ((CommentAware) lifecycleCodec).readComments(text);
+            newComments = load.comments;
+            newOrder = load.keyOrder;
+        } else {
+            newComments = new CommentTree();
+            newOrder = KeyOrder.capture(newRoot, sep());
+        }
+        applyLoaded(newRoot, newComments, newOrder);
+    }
+
+    private void applyLoaded(final ObjectNode newRoot, final CommentTree newComments, final KeyOrder newOrder) {
+        this.root = newRoot;
+        this.comments = newComments;
+        this.fileKeyOrder = newOrder;
+        this.loadedPaths.clear();
+        collectDeep(this.root, "", this.loadedPaths);
+        this.dirty = false;
+    }
+
+    private byte[] encode() {
+        final String text;
+        if (lifecycleCodec instanceof CommentAware && lifecycleCodec.commentFidelity() != CommentFidelity.NONE) {
+            text = ((CommentAware) lifecycleCodec).writeWithComments(root, comments, fileKeyOrder);
+        } else {
+            text = lifecycleCodec.writeTreePlain(root);
+        }
+        return text.getBytes(backend.charset());
+    }
+
+    private void safeBackup() {
+        try {
+            backend.backupUnparseable();
+        } catch (final IOException ignored) {
+            // best-effort: a failed backup must not block the load
+        }
+    }
+
+    /** Encodes the tree (with comments + key order) and writes it atomically; serialized per-Config. */
+    public void save() {
+        requireBackend();
+        lock.lock();
+        try {
+            final Backend.Fingerprint written = backend.writeAtomic(encode());
+            loaded = written;
+            if (watcher != null) {
+                watcher.refreshSnapshot(written);
+            }
+            dirty = false;
+        } catch (final IOException e) {
+            throw new ConfigIOException("failed to save " + backend.describe(), e);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Saves only if the tree was mutated since the last load/save. */
+    public void saveIfDirty() {
+        if (dirty) {
+            save();
+        }
+    }
+
+    /** Fire-and-forget save on the shared daemon executor. */
+    public CompletableFuture<Void> saveAsync() {
+        return CompletableFuture.runAsync(this::save, ConfigExecutor.shared());
+    }
+
+    /**
+     * Re-reads the file into the tree. A missing file keeps the current tree ({@link LoadStatus#ABSENT});
+     * a file that exists but cannot be parsed keeps the current tree without backing up or overwriting
+     * ({@link LoadStatus#PARSE_FAILED_KEPT}, a recorded divergence). Only a clean parse replaces the tree.
+     */
+    public void reload() {
+        requireBackend();
+        lock.lock();
+        try {
+            if (!backend.exists()) {
+                lastLoadStatus = LoadStatus.ABSENT;
+                return;
+            }
+            final byte[] bytes = backend.readBytes();
+            try {
+                decodeInto(bytes);
+                loaded = backend.fingerprint();
+                lastLoadStatus = LoadStatus.OK;
+            } catch (final CodecException parseFail) {
+                lastLoadStatus = LoadStatus.PARSE_FAILED_KEPT;
+            }
+        } catch (final IOException e) {
+            throw new ConfigIOException("failed to reload " + backend.describe(), e);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public long getLastModified() {
+        return loaded.mtime;
+    }
+
+    /** True if the durable file's fingerprint differs from what was last loaded/saved. */
+    public boolean hasBeenModified() {
+        return backend != null && !backend.fingerprint().equals(loaded);
+    }
+
+    public LoadStatus lastLoadStatus() {
+        return lastLoadStatus;
+    }
+
+    /** True when in-memory state may differ from the file because a reload kept stale data. */
+    public boolean isDivergedFromDisk() {
+        return lastLoadStatus == LoadStatus.PARSE_FAILED_KEPT;
+    }
+
+    /** Enables auto-reload: the file is polled on a daemon thread and the tree refreshed on change. */
+    public Config withAutoReload(final java.time.Duration pollInterval) {
+        requireBackend();
+        if (pollInterval == null || pollInterval.isZero() || pollInterval.isNegative()) {
+            throw new IllegalArgumentException("auto-reload poll interval must be positive");
+        }
+        close();
+        this.watcher = backend.watch(pollInterval, () -> {
+            reload();
+            final Runnable cb = this.onReload;
+            if (cb != null) {
+                cb.run();
+            }
+        });
+        watcher.start();
+        return this;
+    }
+
+    public Config onReload(final Runnable callback) {
+        this.onReload = callback;
+        return this;
+    }
+
+    public void stopAutoReload() {
+        close();
+    }
+
+    /** Stops the watcher, if any. Idempotent. */
+    @Override
+    public void close() {
+        final Backend.Watcher w = this.watcher;
+        if (w != null) {
+            w.close();
+            this.watcher = null;
+        }
     }
 
     @Override
