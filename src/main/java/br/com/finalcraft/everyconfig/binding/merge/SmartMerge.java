@@ -38,7 +38,11 @@ public final class SmartMerge {
             }
         }
 
-        if (options.obsoletePolicy() == BindOptions.ObsoletePolicy.REMOVE && schema.isClosed()) {
+        // A closed schema that declares no keys cannot legitimately own a node's contents (e.g. a
+        // polymorphic node typed to an abstract base with no own fields), so treating its children as
+        // obsolete would strip data the schema cannot account for. Only prune when the schema declares keys.
+        if (options.obsoletePolicy() == BindOptions.ObsoletePolicy.REMOVE && schema.isClosed()
+                && !schema.declaredKeys().isEmpty()) {
             final List<String> obsolete = new ArrayList<>();
             final Iterator<String> canonNames = canonical.fieldNames();
             while (canonNames.hasNext()) {
