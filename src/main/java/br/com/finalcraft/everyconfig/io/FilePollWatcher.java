@@ -23,15 +23,18 @@ final class FilePollWatcher implements Backend.Watcher {
     private final Path filePath;
     private final long pollMillis;
     private final Runnable onChange;
+    private final boolean contentHashed;
     private final Thread thread;
 
     private volatile boolean running = true;
     private volatile Backend.Fingerprint baseline;
 
-    FilePollWatcher(final Path filePath, final Duration pollInterval, final Runnable onChange) {
+    FilePollWatcher(final Path filePath, final Duration pollInterval, final Runnable onChange,
+                    final boolean contentHashed) {
         this.filePath = filePath;
         this.pollMillis = Math.max(1L, pollInterval.toMillis());
         this.onChange = onChange;
+        this.contentHashed = contentHashed;
         this.baseline = probe();
         this.thread = new Thread(this::run, "everyconfig-watcher-" + filePath.getFileName());
         this.thread.setDaemon(true);
@@ -84,8 +87,13 @@ final class FilePollWatcher implements Backend.Watcher {
     private Backend.Fingerprint probe() {
         try {
             if (Files.exists(filePath)) {
-                return new Backend.Fingerprint(Files.getLastModifiedTime(filePath).toMillis(),
-                        Files.size(filePath));
+                final long mtime = Files.getLastModifiedTime(filePath).toMillis();
+                final long size = Files.size(filePath);
+                if (!contentHashed) {
+                    return new Backend.Fingerprint(mtime, size);
+                }
+                // Hash the content so a same-size edit within one coarse mtime tick is still seen as a change.
+                return new Backend.Fingerprint(mtime, size, AtomicFileBackend.crc32(Files.readAllBytes(filePath)));
             }
         } catch (final IOException ignored) {
             // best-effort; treat as absent

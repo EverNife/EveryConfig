@@ -808,6 +808,15 @@ public class Config implements AutoCloseable {
 
     /** Enables auto-reload: the file is polled on a daemon thread and the tree refreshed on change. */
     public Config withAutoReload(final java.time.Duration pollInterval) {
+        return withAutoReload(pollInterval, false);
+    }
+
+    /**
+     * As {@link #withAutoReload(java.time.Duration)}, but {@code detectInPlaceEdits} makes the watcher also
+     * catch a same-size edit landing within one coarse mtime tick (it hashes content each poll instead of
+     * only stat-ing it — a full read per poll, hence opt-in).
+     */
+    public Config withAutoReload(final java.time.Duration pollInterval, final boolean detectInPlaceEdits) {
         requireBackend();
         if (pollInterval == null || pollInterval.isZero() || pollInterval.isNegative()) {
             throw new IllegalArgumentException("auto-reload poll interval must be positive");
@@ -819,7 +828,7 @@ public class Config implements AutoCloseable {
             if (cb != null) {
                 cb.run();
             }
-        });
+        }, detectInPlaceEdits);
         watcher.start();
         return this;
     }
