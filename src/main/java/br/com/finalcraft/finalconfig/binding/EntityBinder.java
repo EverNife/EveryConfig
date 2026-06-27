@@ -39,6 +39,7 @@ public final class EntityBinder<T> {
     private final Codec codec;
     private final ObjectMapper mapper;
     private final BindOptions options;
+    private final List<SectionField> sectionFields;
 
     private List<LoadIssue> lastIssues = Collections.emptyList();
 
@@ -51,20 +52,30 @@ public final class EntityBinder<T> {
         this.codec = codec;
         this.mapper = ((ObjectMapperAware) codec).objectMapper();
         this.options = options != null ? options : BindOptions.defaults();
-        rejectUnsupportedSection(type.getRawClass());
+        this.sectionFields = collectSectionFields(type.getRawClass());
     }
 
-    /**
-     * Fail loudly rather than silently misplace data: section placement of a flat field is not wired yet,
-     * so a {@code @Section} field is rejected at bind time instead of being emitted at the wrong path.
-     */
-    private static void rejectUnsupportedSection(final Class<?> raw) {
+    /** A field placed under a nested path by {@code @Section}: its flat key and its full dotted location. */
+    private static final class SectionField {
+        final String flatKey;   // the key the mapper emits the field as, e.g. "max-size"
+        final String fullPath;  // its on-disk location, e.g. "database.pool.max-size"
+
+        SectionField(final String flatKey, final String fullPath) {
+            this.flatKey = flatKey;
+            this.fullPath = fullPath;
+        }
+    }
+
+    private static List<SectionField> collectSectionFields(final Class<?> raw) {
+        final List<SectionField> out = new ArrayList<>();
         for (final Field f : BindingNames.allFields(raw)) {
-            if (f.isAnnotationPresent(Section.class)) {
-                throw new BindException("@Section is not supported yet (on "
-                        + raw.getSimpleName() + "." + f.getName() + ")");
+            final Section s = f.getAnnotation(Section.class);
+            if (s != null && !s.value().isEmpty()) {
+                final String key = BindingNames.keyFor(f);
+                out.add(new SectionField(key, s.value() + "." + key));
             }
         }
+        return out;
     }
 
     ObjectMapper mapper() {
@@ -144,8 +155,73 @@ public final class EntityBinder<T> {
         if (!(candidate instanceof ObjectNode)) {
             throw new BindException("entity " + pojo.getClass().getName() + " did not serialize to an object");
         }
-        SmartMerge.mergeInto(target, (ObjectNode) candidate, schema(), options);
+        final ObjectNode candObj = (ObjectNode) candidate;
+        // @Section fields are emitted flat by the mapper; move them to their nested location before merge.
+        // Obsolete pruning is forced off when sections are present: the schema is flat while the tree is
+        // nested, so a relocated section would otherwise look obsolete.
+        final BindOptions mergeOptions;
+        if (sectionFields.isEmpty()) {
+            mergeOptions = options;
+        } else {
+            relocateForWrite(candObj);
+            mergeOptions = options.withObsoletePolicy(BindOptions.ObsoletePolicy.PRESERVE);
+        }
+        SmartMerge.mergeInto(target, candObj, schema(), mergeOptions);
         seedCommentsFromAnnotations(pojo.getClass(), basePath);
+    }
+
+    /** Surface each {@code @Section} field's nested value at its flat key so the mapper can bind it. */
+    private JsonNode viewForRead(final JsonNode source) {
+        if (!(source instanceof ObjectNode)) {
+            return source;
+        }
+        final ObjectNode copy = (ObjectNode) source.deepCopy();
+        for (final SectionField sf : sectionFields) {
+            final JsonNode node = getAtPath(copy, sf.fullPath);
+            if (node != null) {
+                copy.set(sf.flatKey, node);
+            }
+        }
+        return copy;
+    }
+
+    /** Move each {@code @Section} field from its flat key to its nested location in the candidate tree. */
+    private void relocateForWrite(final ObjectNode candidate) {
+        for (final SectionField sf : sectionFields) {
+            if (candidate.has(sf.flatKey)) {
+                setAtPath(candidate, sf.fullPath, candidate.remove(sf.flatKey));
+            }
+        }
+    }
+
+    private static JsonNode getAtPath(final ObjectNode root, final String dotted) {
+        JsonNode cur = root;
+        for (final String seg : dotted.split("\\.")) {
+            if (!(cur instanceof ObjectNode)) {
+                return null;
+            }
+            cur = cur.get(seg);
+            if (cur == null) {
+                return null;
+            }
+        }
+        return cur;
+    }
+
+    private void setAtPath(final ObjectNode root, final String dotted, final JsonNode value) {
+        final String[] segs = dotted.split("\\.");
+        ObjectNode cur = root;
+        for (int i = 0; i < segs.length - 1; i++) {
+            final JsonNode next = cur.get(segs[i]);
+            if (next instanceof ObjectNode) {
+                cur = (ObjectNode) next;
+            } else {
+                final ObjectNode created = mapper.getNodeFactory().objectNode();
+                cur.set(segs[i], created);
+                cur = created;
+            }
+        }
+        cur.set(segs[segs.length - 1], value);
     }
 
     private Schema schema() {
@@ -172,15 +248,18 @@ public final class EntityBinder<T> {
                 continue;
             }
             final String key = BindingNames.keyFor(f);
-            final String path = basePath.isEmpty() ? key : basePath + config.pathSeparator() + key;
-            // Seed only the first time the path is written; a comment the user deleted stays deleted.
-            if (!config.isPersisted(path) && !comments.hasUserComment(path)) {
+            final Section sec = f.getAnnotation(Section.class);
+            final String fieldPath = (sec != null && !sec.value().isEmpty()) ? sec.value() + "." + key : key;
+            final String path = basePath.isEmpty() ? fieldPath : basePath + config.pathSeparator() + fieldPath;
+            // Seed whenever the path carries no authoritative comment; a deleted comment is re-seeded.
+            if (!comments.hasUserComment(path)) {
                 comments.seedComment(path, String.join("\n", c.value()));
             }
         }
     }
 
-    private T doBind(final T base, final JsonNode source) {
+    private T doBind(final T base, final JsonNode rawSource) {
+        final JsonNode source = sectionFields.isEmpty() ? rawSource : viewForRead(rawSource);
         final List<LoadIssue> issues = new ArrayList<>();
         T result;
         try {

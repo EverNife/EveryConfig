@@ -6,24 +6,34 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 
 /** Decision-#1 reconciliation: a seed fires only the first time a path is written, and migration moves
  *  data + comment while marking the destination persisted. */
 class CommentReconcileTest {
 
-    /** A path that already existed in the loaded file but carries no comment must NOT be re-seeded —
-     *  the user deleted that comment and the deletion has to stick across saves. */
+    /** A code-supplied comment is documentation: it is (re)written whenever the path has no comment,
+     *  including a pre-existing key that never had one, or one the user deleted. */
     @Test
-    void seedSuppressedForPreviouslyPersistedPath() {
+    void seedAppliesDocumentationToAKeyWithoutAComment() {
         final ObjectNode root = JsonNodeFactory.instance.objectNode();
-        root.putObject("a").put("b", 5); // loaded file already had a.b = 5, no comment
+        root.putObject("a").put("b", 5); // existing key, no comment
         final Config c = new Config(root);
 
-        c.getOrSetDefaultValue("a.b", 99, "SEED THAT MUST NOT FIRE");
+        c.getOrSetDefaultValue("a.b", 99, "documented");
 
-        assertEquals(5, c.getInt("a.b"));       // existing value kept
-        assertNull(c.getComment("a.b"));        // seed suppressed: deletion sticks
+        assertEquals(5, c.getInt("a.b"));                  // existing value kept
+        assertEquals("documented", c.getComment("a.b"));   // documentation seeded onto the existing key
+    }
+
+    /** An existing authoritative comment is never clobbered by a seed. */
+    @Test
+    void seedDoesNotOverrideAnExistingComment() {
+        final ObjectNode root = JsonNodeFactory.instance.objectNode();
+        root.put("k", 1);
+        final Config c = new Config(root);
+        c.setComment("k", "user comment");
+        c.getOrSetDefaultValue("k", 2, "SEED IGNORED");
+        assertEquals("user comment", c.getComment("k"));
     }
 
     /** A genuinely new path (absent at load) gets its seed on first write. */

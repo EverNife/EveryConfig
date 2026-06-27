@@ -69,13 +69,6 @@ public class Config implements AutoCloseable {
     private Backend.Watcher watcher;
     private volatile Runnable onReload;
 
-    /**
-     * The paths that already existed in the tree when this config was loaded — the oracle for "is this
-     * the first time the key is written?". A code-seeded comment fires only for a path NOT in this set,
-     * so a comment the user deleted from the file stays deleted instead of being re-seeded every save.
-     */
-    private final Set<String> loadedPaths;
-
     private transient boolean newDefaultValueToSave = false;
     private List<LoadIssue> lastIdCollectionIssues = Collections.emptyList();
 
@@ -97,8 +90,6 @@ public class Config implements AutoCloseable {
         this.nodes = JsonNodeFactory.instance;
         this.pathOptions = PathOptions.DEFAULT;
         this.coercion = new NodeCoercion(this.nodes);
-        this.loadedPaths = new LinkedHashSet<>();
-        collectDeep(root, "", this.loadedPaths);
     }
 
     // ==================== escape hatch + internals ====================
@@ -284,11 +275,6 @@ public class Config implements AutoCloseable {
         return resolve(path);
     }
 
-    /** True when {@code path} was present in the tree at load time — the "first write?" oracle for seeds. */
-    public boolean isPersisted(final String path) {
-        return loadedPaths.contains(path);
-    }
-
     public String getString(final String path) {
         return getString(path, null);
     }
@@ -461,10 +447,10 @@ public class Config implements AutoCloseable {
     }
 
     /**
-     * Move a key's data and its own comment + spacing from {@code oldPath} to {@code newPath}, marking
-     * the destination as already persisted so the moved comment is preserved (never re-seeded). This is
-     * the explicit hook for a config migration; reconciliation never infers a rename by itself. The
-     * moved node keeps its full data subtree; comments on descendant paths are not carried over.
+     * Move a key's data and its own comment + spacing from {@code oldPath} to {@code newPath}. The moved
+     * comment is written as authoritative, so it is preserved and not re-seeded. This is the explicit hook
+     * for a config migration; reconciliation never infers a rename by itself. The moved node keeps its
+     * full data subtree; comments on descendant paths are not carried over.
      */
     public void migrateKey(final String oldPath, final String newPath) {
         if (Path.isRoot(oldPath) || Path.isRoot(newPath) || oldPath.equals(newPath) || !contains(oldPath)) {
@@ -484,8 +470,6 @@ public class Config implements AutoCloseable {
             comments.setComment(newPath, side, CommentType.SIDE);
         }
         comments.setBlankLinesBefore(newPath, blanks);
-        loadedPaths.remove(oldPath);
-        loadedPaths.add(newPath);
     }
 
     // ==================== getOrSetDefaultValue (the seeding engine) ====================
@@ -502,7 +486,7 @@ public class Config implements AutoCloseable {
 
     public <D> D getOrSetDefaultValue(final String path, final D def, final String comment) {
         final D value = getOrSetDefaultValue(path, def);
-        seedCommentIfUnpersisted(path, comment);
+        seedCommentIfAbsent(path, comment);
         return value;
     }
 
@@ -518,17 +502,14 @@ public class Config implements AutoCloseable {
 
     public <D> List<D> getOrSetDefaultValue(final String path, final List<D> def, final String comment) {
         final List<D> value = getOrSetDefaultValue(path, def);
-        seedCommentIfUnpersisted(path, comment);
+        seedCommentIfAbsent(path, comment);
         return value;
     }
 
-    /**
-     * Deposit a seeded block comment only when {@code path} is being written for the FIRST time (it was
-     * not present at load and carries no authoritative comment). Re-running with a path the file already
-     * had is a no-op, so a comment the user deleted is never resurrected.
-     */
-    private void seedCommentIfUnpersisted(final String path, final String comment) {
-        if (comment != null && !loadedPaths.contains(path) && !comments.hasUserComment(path)) {
+    private void seedCommentIfAbsent(final String path, final String comment) {
+        // Seed whenever the path has no authoritative comment. If the user deleted the comment, there is
+        // none, so it is written again — a code-supplied comment behaves as live documentation.
+        if (comment != null && !comments.hasUserComment(path)) {
             comments.seedComment(path, comment);
             newDefaultValueToSave = true;
             dirty = true;
@@ -691,8 +672,6 @@ public class Config implements AutoCloseable {
         this.root = newRoot;
         this.comments = newComments;
         this.fileKeyOrder = newOrder;
-        this.loadedPaths.clear();
-        collectDeep(this.root, "", this.loadedPaths);
         this.dirty = false;
     }
 
