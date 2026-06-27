@@ -1,11 +1,11 @@
 package br.com.finalcraft.finalconfig.config;
 
-import br.com.finalcraft.finalconfig.backend.AtomicFileBackend;
-import br.com.finalcraft.finalconfig.backend.Backend;
-import br.com.finalcraft.finalconfig.backend.ConfigExecutor;
+import br.com.finalcraft.finalconfig.io.AtomicFileBackend;
+import br.com.finalcraft.finalconfig.io.Backend;
+import br.com.finalcraft.finalconfig.io.ConfigExecutor;
 import br.com.finalcraft.finalconfig.binding.BindOptions;
 import br.com.finalcraft.finalconfig.binding.EntityBinder;
-import br.com.finalcraft.finalconfig.binding.IdIndexer;
+import br.com.finalcraft.finalconfig.binding.merge.IdIndexer;
 import br.com.finalcraft.finalconfig.binding.LoadIssue;
 import br.com.finalcraft.finalconfig.codec.Codec;
 import br.com.finalcraft.finalconfig.codec.CommentAware;

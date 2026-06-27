@@ -1,4 +1,5 @@
-package br.com.finalcraft.finalconfig.binding;
+package br.com.finalcraft.finalconfig.binding.schema;
+import br.com.finalcraft.finalconfig.binding.BindException;
 
 import br.com.finalcraft.finalconfig.annotation.Id;
 import br.com.finalcraft.finalconfig.annotation.Key;
@@ -13,7 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /** Shared reflection helpers for resolving on-disk key names and the {@code @Id} field of an entity. */
-final class BindingNames {
+public final class BindingNames {
 
     /** Types allowed for an {@code @Id} field — those that round-trip cleanly as a section name. */
     private static final Set<Class<?>> VALID_ID_TYPES = new HashSet<>(Arrays.asList(
@@ -25,7 +26,7 @@ final class BindingNames {
     }
 
     /** The on-disk key for a field: {@code @Key} (rename + case) first, then {@code @JsonProperty}, else the name. */
-    static String keyFor(final Field f) {
+    public static String keyFor(final Field f) {
         final Key k = f.getAnnotation(Key.class);
         if (k != null) {
             final String base = k.value().isEmpty() ? f.getName() : k.value();
@@ -39,7 +40,7 @@ final class BindingNames {
     }
 
     /** Every declared field up the hierarchy, subclass first. */
-    static List<Field> allFields(final Class<?> clazz) {
+    public static List<Field> allFields(final Class<?> clazz) {
         final List<Field> out = new ArrayList<>();
         Class<?> c = clazz;
         while (c != null && c != Object.class) {
@@ -52,7 +53,7 @@ final class BindingNames {
     }
 
     /** The single {@code @Id} field of an entity, validated; throws when absent, duplicated, or wrongly typed. */
-    static Field requireSingleId(final Class<?> clazz) {
+    public static Field requireSingleId(final Class<?> clazz) {
         Field found = null;
         for (final Field f : allFields(clazz)) {
             if (f.isAnnotationPresent(Id.class)) {

@@ -1,4 +1,6 @@
-package br.com.finalcraft.finalconfig.binding;
+package br.com.finalcraft.finalconfig.binding.merge;
+import br.com.finalcraft.finalconfig.binding.BindException;
+import br.com.finalcraft.finalconfig.binding.LoadIssue;
 
 import br.com.finalcraft.finalconfig.annotation.PostInject;
 

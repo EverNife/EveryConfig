@@ -1,4 +1,4 @@
-package br.com.finalcraft.finalconfig.binding;
+package br.com.finalcraft.finalconfig.binding.schema;
 
 import com.fasterxml.jackson.databind.BeanDescription;
 import com.fasterxml.jackson.databind.JavaType;
@@ -16,16 +16,16 @@ import java.util.concurrent.ConcurrentHashMap;
  * written. Child schemas resolve lazily, so a self-referential type does not recurse forever at build
  * time.
  */
-final class SchemaCache {
+public final class SchemaCache {
 
     private final ObjectMapper mapper;
     private final Map<JavaType, Schema> cache = new ConcurrentHashMap<>();
 
-    SchemaCache(final ObjectMapper mapper) {
+    public SchemaCache(final ObjectMapper mapper) {
         this.mapper = mapper;
     }
 
-    Schema of(final JavaType type) {
+    public Schema of(final JavaType type) {
         Schema schema = cache.get(type);
         if (schema == null) {
             schema = build(type);

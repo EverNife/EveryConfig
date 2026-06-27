@@ -1,4 +1,9 @@
 package br.com.finalcraft.finalconfig.binding;
+import br.com.finalcraft.finalconfig.binding.merge.PostInjectInvoker;
+import br.com.finalcraft.finalconfig.binding.merge.SmartMerge;
+import br.com.finalcraft.finalconfig.binding.schema.BindingNames;
+import br.com.finalcraft.finalconfig.binding.schema.Schema;
+import br.com.finalcraft.finalconfig.binding.schema.SchemaCache;
 
 import br.com.finalcraft.finalconfig.annotation.Comment;
 import br.com.finalcraft.finalconfig.annotation.CommentMode;

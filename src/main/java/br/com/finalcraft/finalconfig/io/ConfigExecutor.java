@@ -1,4 +1,4 @@
-package br.com.finalcraft.finalconfig.backend;
+package br.com.finalcraft.finalconfig.io;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;

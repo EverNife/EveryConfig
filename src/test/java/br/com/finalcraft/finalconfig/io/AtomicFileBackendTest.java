@@ -1,4 +1,4 @@
-package br.com.finalcraft.finalconfig.backend;
+package br.com.finalcraft.finalconfig.io;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
