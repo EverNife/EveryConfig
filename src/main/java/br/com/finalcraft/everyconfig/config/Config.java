@@ -460,29 +460,22 @@ public class Config implements AutoCloseable {
     }
 
     /**
-     * Move a key's data and its own comment + spacing from {@code oldPath} to {@code newPath}. The moved
-     * comment is written as authoritative, so it is preserved and not re-seeded. This is the explicit hook
-     * for a config migration; reconciliation never infers a rename by itself. The moved node keeps its
-     * full data subtree; comments on descendant paths are not carried over.
+     * Move a key's data and its full comment subtree (the key's own block/side comment and blank-line
+     * spacing AND those of every descendant) from {@code oldPath} to {@code newPath}. The moved comments
+     * are written as authoritative, so they are preserved and not re-seeded. This is the explicit hook for
+     * a config migration; reconciliation never infers a rename by itself.
      */
     public void migrateKey(final String oldPath, final String newPath) {
         if (Path.isRoot(oldPath) || Path.isRoot(newPath) || oldPath.equals(newPath) || !contains(oldPath)) {
             return;
         }
         final JsonNode node = resolve(oldPath);
-        final String block = comments.getComment(oldPath, CommentType.BLOCK);
-        final String side = comments.getComment(oldPath, CommentType.SIDE);
-        final int blanks = comments.getBlankLinesBefore(oldPath);
-
+        // Detach the comment subtree BEFORE the data move so neither wipe (removeValue on the source,
+        // setValue on the destination) can destroy it; re-attach it under the new path afterwards.
+        final CommentTree.Snapshot movedComments = comments.detachSubtree(oldPath);
         removeValue(oldPath);
         setValue(newPath, node); // a raw JsonNode passes through coercion unchanged
-        if (block != null) {
-            comments.setComment(newPath, block, CommentType.BLOCK);
-        }
-        if (side != null) {
-            comments.setComment(newPath, side, CommentType.SIDE);
-        }
-        comments.setBlankLinesBefore(newPath, blanks);
+        comments.attachSubtree(newPath, movedComments);
     }
 
     // ==================== getOrSetDefaultValue (the seeding engine) ====================

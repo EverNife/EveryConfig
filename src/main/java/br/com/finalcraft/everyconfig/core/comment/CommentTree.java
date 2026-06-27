@@ -140,7 +140,61 @@ public final class CommentTree {
         }
     }
 
+    /**
+     * Remove the comment overlay for {@code path} and every descendant and return it as a relocatable
+     * snapshot keyed by each entry's suffix relative to {@code path} ({@code ""} for the path itself).
+     * Pairs with {@link #attachSubtree} to carry a key's whole documentation when its data subtree is
+     * renamed or moved.
+     */
+    public Snapshot detachSubtree(final String path) {
+        final Map<String, Entry> out = new LinkedHashMap<>();
+        if (path == null || path.isEmpty()) {
+            return new Snapshot(out);
+        }
+        final String prefix = path + ".";
+        final Iterator<Map.Entry<String, Entry>> it = byPath.entrySet().iterator();
+        while (it.hasNext()) {
+            final Map.Entry<String, Entry> e = it.next();
+            final String key = e.getKey();
+            if (key.equals(path)) {
+                out.put("", e.getValue());
+                it.remove();
+            } else if (key.startsWith(prefix)) {
+                out.put(key.substring(prefix.length()), e.getValue());
+                it.remove();
+            }
+        }
+        return new Snapshot(out);
+    }
+
+    /**
+     * Re-attach a {@link #detachSubtree} snapshot under {@code newPath}: every captured entry lands at
+     * {@code newPath} plus its relative suffix, overwriting any comment already at a target path.
+     */
+    public void attachSubtree(final String newPath, final Snapshot snapshot) {
+        if (newPath == null || newPath.isEmpty() || snapshot == null || snapshot.isEmpty()) {
+            return;
+        }
+        for (final Map.Entry<String, Entry> e : snapshot.entries.entrySet()) {
+            final String suffix = e.getKey();
+            byPath.put(suffix.isEmpty() ? newPath : newPath + "." + suffix, e.getValue());
+        }
+    }
+
     public boolean isEmpty() {
         return byPath.isEmpty();
+    }
+
+    /** An opaque, relocatable capture of one path subtree's comment overlay (see {@link #detachSubtree}). */
+    public static final class Snapshot {
+        private final Map<String, Entry> entries;
+
+        private Snapshot(final Map<String, Entry> entries) {
+            this.entries = entries;
+        }
+
+        public boolean isEmpty() {
+            return entries.isEmpty();
+        }
     }
 }
