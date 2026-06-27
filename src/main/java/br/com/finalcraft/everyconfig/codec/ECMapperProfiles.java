@@ -1,6 +1,6 @@
 package br.com.finalcraft.everyconfig.codec;
 
-import br.com.finalcraft.everyconfig.binding.introspect.FinalConfigModule;
+import br.com.finalcraft.everyconfig.binding.introspect.EveryConfigModule;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.Module;
@@ -11,7 +11,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.util.function.Supplier;
 
 /**
- * Named Jackson profiles for FinalConfig codecs, expressed as composable presets rather than loose
+ * Named Jackson profiles for EveryConfig codecs, expressed as composable presets rather than loose
  * flags. Each method mutates and returns the given mapper, composing over JSON/YAML alike (a
  * {@code YAMLMapper} extends {@code ObjectMapper}); the {@code <M extends ObjectMapper>} generic
  * preserves the concrete mapper type. Mutation happens once at construction, so the result is safe for
@@ -21,7 +21,7 @@ import java.util.function.Supplier;
  * mutating them on an already-built mapper is deprecated. Map-entry ordering below is a
  * {@code SerializationFeature}, so it is safe to set this way.
  */
-public final class FCMapperProfiles {
+public final class ECMapperProfiles {
 
     /**
      * The {@code Jdk8Module} (Optional support) is registered reflectively because
@@ -30,7 +30,7 @@ public final class FCMapperProfiles {
      */
     private static final Module JDK8_MODULE = loadJdk8ModuleOrNull();
 
-    private FCMapperProfiles() {
+    private ECMapperProfiles() {
     }
 
     /**
@@ -61,7 +61,7 @@ public final class FCMapperProfiles {
         baseReadContract(mapper);
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         mapper.disable(SerializationFeature.WRITE_DURATIONS_AS_TIMESTAMPS);
-        mapper.registerModule(new FinalConfigModule()); // key-naming annotations + enum-by-name
+        mapper.registerModule(new EveryConfigModule()); // key-naming annotations + enum-by-name
         return mapper;
     }
 

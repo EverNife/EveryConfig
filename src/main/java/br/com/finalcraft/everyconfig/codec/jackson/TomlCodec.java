@@ -4,7 +4,7 @@ import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CodecException;
 import br.com.finalcraft.everyconfig.codec.CommentAware;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
-import br.com.finalcraft.everyconfig.codec.FCMapperProfiles;
+import br.com.finalcraft.everyconfig.codec.ECMapperProfiles;
 import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
@@ -36,7 +36,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
     private static final char SEP = '.';
 
     /** One shared, isolated default mapper reused across every default-constructed instance. */
-    private static final ObjectMapper DEFAULT = FCMapperProfiles.storageSafe(new TomlMapper());
+    private static final ObjectMapper DEFAULT = ECMapperProfiles.storageSafe(new TomlMapper());
 
     private final ObjectMapper mapper;
 
@@ -45,7 +45,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
     }
 
     public TomlCodec(final ObjectMapper userMapper) {
-        this.mapper = FCMapperProfiles.isolate(userMapper, () -> DEFAULT);
+        this.mapper = ECMapperProfiles.isolate(userMapper, () -> DEFAULT);
     }
 
     // ---- identity -------------------------------------------------------

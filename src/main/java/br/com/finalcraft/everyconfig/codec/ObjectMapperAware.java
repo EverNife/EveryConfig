@@ -9,7 +9,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  *
  * <p>The returned mapper is the codec's ISOLATED instance (a {@code copy()} frozen from any
  * user-supplied mapper at construction). Callers MUST NOT mutate it post-construction; doing so would
- * change serialization for every live config of this format. See {@link FCMapperProfiles#isolate}.
+ * change serialization for every live config of this format. See {@link ECMapperProfiles#isolate}.
  */
 public interface ObjectMapperAware {
 

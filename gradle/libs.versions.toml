@@ -1,6 +1,6 @@
 [versions]
 # Project version - single source of truth (consumed by build.gradle).
-finalconfig = "1.0.1"
+everyconfig = "1.0.1"
 
 # Jackson is the serialization engine; one BOM pin governs the whole family.
 jackson = "2.18.5"

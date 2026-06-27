@@ -14,7 +14,7 @@ public final class ConfigExecutor {
 
                 @Override
                 public Thread newThread(final Runnable r) {
-                    final Thread t = new Thread(r, "finalconfig-io-" + n.incrementAndGet());
+                    final Thread t = new Thread(r, "everyconfig-io-" + n.incrementAndGet());
                     t.setDaemon(true);
                     return t;
                 }

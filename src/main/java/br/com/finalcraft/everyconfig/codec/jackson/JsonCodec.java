@@ -3,7 +3,7 @@ package br.com.finalcraft.everyconfig.codec.jackson;
 import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CodecException;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
-import br.com.finalcraft.everyconfig.codec.FCMapperProfiles;
+import br.com.finalcraft.everyconfig.codec.ECMapperProfiles;
 import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -20,7 +20,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 public final class JsonCodec implements Codec, ObjectMapperAware {
 
     /** One shared, isolated default mapper reused across every default-constructed instance. */
-    private static final ObjectMapper DEFAULT = FCMapperProfiles.strictJson(JsonMapper.builder().build());
+    private static final ObjectMapper DEFAULT = ECMapperProfiles.strictJson(JsonMapper.builder().build());
 
     private final ObjectMapper mapper;
     private final boolean sidecarDoc;
@@ -36,7 +36,7 @@ public final class JsonCodec implements Codec, ObjectMapperAware {
     }
 
     public JsonCodec(final ObjectMapper userMapper, final boolean sidecarDoc) {
-        this.mapper = FCMapperProfiles.isolate(userMapper, () -> DEFAULT);
+        this.mapper = ECMapperProfiles.isolate(userMapper, () -> DEFAULT);
         this.sidecarDoc = sidecarDoc;
     }
 

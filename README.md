@@ -1,6 +1,6 @@
 <div align="center">
 
-# FinalConfig
+# EveryConfig
 
 ### One config API. Every format. Comments included.
 
@@ -34,7 +34,7 @@ data, never clobbers it.
 - [Project layout](#project-layout)
 - [Compatibility notes](#compatibility-notes)
 
-> 📖 **Full documentation lives on the [Wiki](https://github.com/EverNife/FinalConfig/wiki).** This README is
+> 📖 **Full documentation lives on the [Wiki](https://github.com/EverNife/EveryConfig/wiki).** This README is
 > the tour; the wiki has the per-topic deep dives, the API cheat sheet, and the gotchas.
 
 ---
@@ -42,7 +42,7 @@ data, never clobbers it.
 ## Why
 
 Most config libraries marry you to one format, and lose your comments the first time the app rewrites the
-file. FinalConfig treats the format as a **deployment choice**, not an architectural one, and the canonical
+file. EveryConfig treats the format as a **deployment choice**, not an architectural one, and the canonical
 state is a Jackson `ObjectNode` tree that every format reads into and writes out of.
 
 - **🌳 One tree, many formats.** The canonical state is a Jackson `ObjectNode`. A pluggable `Codec` turns text
@@ -56,7 +56,7 @@ state is a Jackson `ObjectNode` tree that every format reads into and writes out
 - **🛟 Corruption-proof startup.** A malformed file is backed up to `.bak` and the config starts empty — a
   broken config never blocks boot.
 - **☕ Java 8 runtime.** Bytecode targets Java 8 while the source is written in modern Java; the dependency set
-  (Jackson) is Java-8-clean, so FinalConfig runs on a Java 8 JVM.
+  (Jackson) is Java-8-clean, so EveryConfig runs on a Java 8 JVM.
 
 ---
 
@@ -76,7 +76,7 @@ state is a Jackson `ObjectNode` tree that every format reads into and writes out
 
 ## Install
 
-FinalConfig is a **thin `java-library` jar**: Jackson is a normal transitive dependency, not relocated.
+EveryConfig is a **thin `java-library` jar**: Jackson is a normal transitive dependency, not relocated.
 
 **Gradle**
 
@@ -87,7 +87,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'br.com.finalcraft:FinalConfig:1.0.1'
+    implementation 'br.com.finalcraft:EveryConfig:1.0.1'
 }
 ```
 
@@ -101,12 +101,12 @@ dependencies {
 
 <dependency>
   <groupId>br.com.finalcraft</groupId>
-  <artifactId>FinalConfig</artifactId>
+  <artifactId>EveryConfig</artifactId>
   <version>1.0.1</version>
 </dependency>
 ```
 
-> **Bukkit/Spigot consumers:** a plugin that bundles FinalConfig should run its own `shadowJar` and **relocate
+> **Bukkit/Spigot consumers:** a plugin that bundles EveryConfig should run its own `shadowJar` and **relocate
 > `com.fasterxml.jackson` and `org.yaml.snakeyaml`** in *its* shade step. Relocation policy belongs at the leaf
 > artifact — the only place that knows the server's classpath — so the library itself ships thin.
 
@@ -197,7 +197,7 @@ cfg.getConfigSection("a.b");        // a scoped view that delegates back with th
 > **Trichotomy:** an absent path, an explicit `null`, and a real value are distinct — `contains` tells absent
 > from present, and a typed getter flattens an explicit `null` to its default.
 
-**→ Deep dive: [The Dynamic API](https://github.com/EverNife/FinalConfig/wiki/Dynamic-API)**
+**→ Deep dive: [The Dynamic API](https://github.com/EverNife/EveryConfig/wiki/Dynamic-API)**
 
 ---
 
@@ -216,7 +216,7 @@ cfg.setDefaultComment("server.port", "written only if absent");        // user-e
 On a class, `@Comment` defaults to `OVERRIDE` (documentation in code stays current), or
 `@Comment(mode = SET_IF_ABSENT)` to let a user's edit win.
 
-**→ Deep dive: [Default Values & Comments](https://github.com/EverNife/FinalConfig/wiki/Default-Values-and-Comments)**
+**→ Deep dive: [Default Values & Comments](https://github.com/EverNife/EveryConfig/wiki/Default-Values-and-Comments)**
 
 ---
 
@@ -247,8 +247,8 @@ DbConfig db = cfg.loadAs(DbConfig.class, codec);    // lenient by default
 - **Annotations:** `@Key` (rename + case), `@Comment` (+ `CommentMode`), `@Section` (nested placement), `@Id`
   (collection indexing), `@PostInject` (run after binding). Native Jackson annotations keep working too.
 
-**→ Deep dives: [Typed Entity Binding](https://github.com/EverNife/FinalConfig/wiki/Entity-Binding) ·
-[Annotations](https://github.com/EverNife/FinalConfig/wiki/Annotations)**
+**→ Deep dives: [Typed Entity Binding](https://github.com/EverNife/EveryConfig/wiki/Entity-Binding) ·
+[Annotations](https://github.com/EverNife/EveryConfig/wiki/Annotations)**
 
 ---
 
@@ -271,7 +271,7 @@ List<Account> back = cfg.readIdCollection("accounts", Account.class, codec);
 
 `@Id` may be `String`, a boxed/primitive numeric, `boolean` or `UUID`.
 
-**→ Deep dive: [`@Id` Collections](https://github.com/EverNife/FinalConfig/wiki/Id-Collections)**
+**→ Deep dive: [`@Id` Collections](https://github.com/EverNife/EveryConfig/wiki/Id-Collections)**
 
 ---
 
@@ -291,7 +291,7 @@ cfg.close();                             // idempotent; stops the watcher
 > in-memory tree and **never reads the file first**. A hand-edit made while the app runs is overwritten on the
 > next save unless the caller `reload()`s to pick it up.
 
-**→ Deep dive: [Lifecycle, Reload & Watching](https://github.com/EverNife/FinalConfig/wiki/Lifecycle-and-Reload)**
+**→ Deep dive: [Lifecycle, Reload & Watching](https://github.com/EverNife/EveryConfig/wiki/Lifecycle-and-Reload)**
 
 ---
 
@@ -316,16 +316,16 @@ export JAVA_HOME=/path/to/jdk-25      # PowerShell: $env:JAVA_HOME = "C:\path\to
 > behavior is validated identically on YAML, JSON, TOML and JSONC. Residual files are written under
 > `build/test-residuals/` for inspection.
 
-**→ Deep dives: [Building from Source](https://github.com/EverNife/FinalConfig/wiki/Building-from-Source) ·
-[Running the Tests](https://github.com/EverNife/FinalConfig/wiki/Running-the-Tests)**
+**→ Deep dives: [Building from Source](https://github.com/EverNife/EveryConfig/wiki/Building-from-Source) ·
+[Running the Tests](https://github.com/EverNife/EveryConfig/wiki/Running-the-Tests)**
 
 ---
 
 ## Project layout
 
 ```
-FinalConfig/
-└── src/main/java/br/com/finalcraft/finalconfig/
+EveryConfig/
+└── src/main/java/br/com/finalcraft/everyconfig/
     ├── config/                  # Config (dynamic API + lifecycle) + config.section (ConfigSection)
     ├── core/                    # the canonical model: core.tree (Path), core.coerce (NodeCoercion),
     │                            #   core.comment (CommentTree), KeyOrder
@@ -336,7 +336,7 @@ FinalConfig/
     └── annotation/              # @Key, @Comment, @Section, @Id, @PostInject (+ KeyTransformCase, CommentMode)
 ```
 
-**→ Deep dive: [Project Layout](https://github.com/EverNife/FinalConfig/wiki/Project-Layout)**
+**→ Deep dive: [Project Layout](https://github.com/EverNife/EveryConfig/wiki/Project-Layout)**
 
 ---
 

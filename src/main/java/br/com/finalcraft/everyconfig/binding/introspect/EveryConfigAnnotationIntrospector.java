@@ -6,14 +6,14 @@ import com.fasterxml.jackson.databind.introspect.Annotated;
 import com.fasterxml.jackson.databind.introspect.JacksonAnnotationIntrospector;
 
 /**
- * Adds FinalConfig's key-naming annotations on top of Jackson's own. Only name resolution is overridden;
+ * Adds EveryConfig's key-naming annotations on top of Jackson's own. Only name resolution is overridden;
  * everything else ({@code @JsonIgnore}, {@code @JsonAlias}, {@code @JsonCreator}, visibility, ...) falls
  * through to the Jackson base, so native annotations keep working unchanged.
  *
  * <p>A {@link Key} renames a property and/or applies a case transform; with no {@code @Key} the Jackson
  * default name is kept.
  */
-public final class FinalConfigAnnotationIntrospector extends JacksonAnnotationIntrospector {
+public final class EveryConfigAnnotationIntrospector extends JacksonAnnotationIntrospector {
 
     private static final long serialVersionUID = 1L;
 

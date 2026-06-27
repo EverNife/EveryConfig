@@ -12,18 +12,18 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class FCMapperProfilesTest {
+class ECMapperProfilesTest {
 
     @Test
     void storageSafeDisablesTimestampsAndUnknownFailure() {
-        final ObjectMapper mapper = FCMapperProfiles.storageSafe(JsonMapper.builder().build());
+        final ObjectMapper mapper = ECMapperProfiles.storageSafe(JsonMapper.builder().build());
         assertFalse(mapper.isEnabled(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS));
         assertFalse(mapper.isEnabled(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES));
     }
 
     @Test
     void compactUsesNonAbsentInclusion() {
-        final ObjectMapper mapper = FCMapperProfiles.compact(JsonMapper.builder().build());
+        final ObjectMapper mapper = ECMapperProfiles.compact(JsonMapper.builder().build());
         assertSame(JsonInclude.Include.NON_ABSENT,
                 mapper.getSerializationConfig().getDefaultPropertyInclusion().getValueInclusion());
     }
@@ -31,20 +31,20 @@ class FCMapperProfilesTest {
     @Test
     void isolateReturnsDistinctCopyOfUserMapper() {
         final ObjectMapper user = JsonMapper.builder().build();
-        final ObjectMapper isolated = FCMapperProfiles.isolate(user, JsonMapper::new);
+        final ObjectMapper isolated = ECMapperProfiles.isolate(user, JsonMapper::new);
         assertNotSame(user, isolated);
     }
 
     @Test
     void isolateBuildsDefaultWhenUserIsNull() {
         final ObjectMapper built = JsonMapper.builder().build();
-        final ObjectMapper isolated = FCMapperProfiles.isolate(null, () -> built);
+        final ObjectMapper isolated = ECMapperProfiles.isolate(null, () -> built);
         assertSame(built, isolated);
     }
 
     @Test
     void baseReadContractLeavesMapOrderingToTheTree() {
-        final ObjectMapper mapper = FCMapperProfiles.baseReadContract(JsonMapper.builder().build());
+        final ObjectMapper mapper = ECMapperProfiles.baseReadContract(JsonMapper.builder().build());
         // Key order is owned by the tree/reconciler, so the mapper must not re-sort map entries.
         assertFalse(mapper.isEnabled(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS));
     }

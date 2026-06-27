@@ -22,7 +22,7 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>One {@code Codec} instance is shared by many live configs: it holds a single, thread-safe Jackson
  * {@link com.fasterxml.jackson.databind.ObjectMapper} (configured once at construction, and
- * {@code copy()}-isolated from any user-supplied mapper — see {@link FCMapperProfiles#isolate}). There
+ * {@code copy()}-isolated from any user-supplied mapper — see {@link ECMapperProfiles#isolate}). There
  * is no per-file engine, no pool, no ThreadLocal.
  */
 public interface Codec {
