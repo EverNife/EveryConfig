@@ -197,6 +197,18 @@ public final class Dtos {
         public String name = "main";
     }
 
+    /** A {@code @Section} field living INSIDE a nested POJO (not at the root); exercises nested relocation. */
+    public static class NestedSectionPojo {
+        public String name = "main";
+        public Inner inner = new Inner();
+
+        public static class Inner {
+            @Section("limits")
+            @Key(transformCase = KeyTransformCase.KEBAB_CASE)
+            public int maxSize = 50;
+        }
+    }
+
     // ----- @Id collection elements -----
 
     /** String {@code @Id}. */

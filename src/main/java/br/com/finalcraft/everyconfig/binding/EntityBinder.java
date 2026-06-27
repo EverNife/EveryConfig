@@ -26,8 +26,12 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -62,27 +66,62 @@ public final class EntityBinder<T> {
         this.sectionFields = collectSectionFields(type.getRawClass());
     }
 
-    /** A field placed under a nested path by {@code @Section}: its flat key and its full dotted location. */
+    /** A field placed under a nested path by {@code @Section}, relative to its owning object. */
     private static final class SectionField {
-        final String flatKey;   // the key the mapper emits the field as, e.g. "max-size"
-        final String fullPath;  // its on-disk location, e.g. "database.pool.max-size"
+        final String ownerPath;     // dotted path of the owning POJO within the root ("" at the root)
+        final String flatKey;       // the key the mapper emits the field as, e.g. "max-size"
+        final String sectionValue;  // the @Section path within the owner, e.g. "database.pool"
 
-        SectionField(final String flatKey, final String fullPath) {
+        SectionField(final String ownerPath, final String flatKey, final String sectionValue) {
+            this.ownerPath = ownerPath;
             this.flatKey = flatKey;
-            this.fullPath = fullPath;
+            this.sectionValue = sectionValue;
+        }
+
+        /** Where the field's value lands within its owner, e.g. {@code "database.pool.max-size"}. */
+        String relativePath() {
+            return sectionValue + "." + flatKey;
         }
     }
 
     private static List<SectionField> collectSectionFields(final Class<?> raw) {
         final List<SectionField> out = new ArrayList<>();
+        collectSectionFields(raw, "", new HashSet<Class<?>>(), out);
+        return out;
+    }
+
+    /** Recursively gather {@code @Section} fields of {@code raw} and of its nested-POJO fields, each tagged
+     *  with the dotted path of its owning object. {@code onPath} guards against self-referential cycles. */
+    private static void collectSectionFields(final Class<?> raw, final String ownerPath,
+                                             final Set<Class<?>> onPath, final List<SectionField> out) {
+        if (raw == null || onPath.contains(raw)) {
+            return;
+        }
+        onPath.add(raw);
         for (final Field f : BindingNames.allFields(raw)) {
+            final String key = BindingNames.keyFor(f);
             final Section s = f.getAnnotation(Section.class);
             if (s != null && !s.value().isEmpty()) {
-                final String key = BindingNames.keyFor(f);
-                out.add(new SectionField(key, s.value() + "." + key));
+                out.add(new SectionField(ownerPath, key, s.value()));
+                continue; // a sectioned field is not descended into (nested-within-section is out of scope)
+            }
+            if (isBindablePojo(f.getType())) {
+                collectSectionFields(f.getType(), ownerPath.isEmpty() ? key : ownerPath + "." + key, onPath, out);
             }
         }
-        return out;
+        onPath.remove(raw);
+    }
+
+    /** Whether a type should be walked for nested {@code @Section} fields (a user POJO, not a JDK/container). */
+    private static boolean isBindablePojo(final Class<?> c) {
+        if (c == null || c.isPrimitive() || c.isArray() || c.isEnum()) {
+            return false;
+        }
+        if (Map.class.isAssignableFrom(c) || Collection.class.isAssignableFrom(c)) {
+            return false;
+        }
+        final String n = c.getName();
+        return !(n.startsWith("java.") || n.startsWith("javax.") || n.startsWith("jdk."));
     }
 
     ObjectMapper mapper() {
@@ -174,43 +213,52 @@ public final class EntityBinder<T> {
             throw new BindException("entity " + pojo.getClass().getName() + " did not serialize to an object");
         }
         final ObjectNode candObj = (ObjectNode) candidate;
-        // @Section fields are emitted flat by the mapper; move them to their nested location before merge.
-        // Obsolete pruning is forced off when sections are present: the schema is flat while the tree is
-        // nested, so a relocated section would otherwise look obsolete.
-        final BindOptions mergeOptions;
-        if (sectionFields.isEmpty()) {
-            mergeOptions = options;
-        } else {
+        // @Section fields are emitted flat by the mapper; move each to its nested location before the merge.
+        // The schema is section-aware (the section spine is declared/owned), so the caller's obsolete policy
+        // can stand — a relocated section is never mistaken for an obsolete key.
+        if (!sectionFields.isEmpty()) {
             relocateForWrite(candObj);
-            mergeOptions = options.withObsoletePolicy(BindOptions.ObsoletePolicy.PRESERVE);
         }
-        SmartMerge.mergeInto(target, candObj, schema(), mergeOptions, config.getCommentTree(), basePath,
+        SmartMerge.mergeInto(target, candObj, schema(), options, config.getCommentTree(), basePath,
                 codec.commentFidelity() == CommentFidelity.LOSSLESS, config.pathSeparator());
         seedCommentsFromAnnotations(pojo.getClass(), basePath);
     }
 
-    /** Surface each {@code @Section} field's nested value at its flat key so the mapper can bind it. */
+    /** Surface each {@code @Section} field's nested value at its flat key (within its owner) for the mapper. */
     private JsonNode viewForRead(final JsonNode source) {
         if (!(source instanceof ObjectNode)) {
             return source;
         }
         final ObjectNode copy = (ObjectNode) source.deepCopy();
         for (final SectionField sf : sectionFields) {
-            final JsonNode node = getAtPath(copy, sf.fullPath);
-            if (node != null) {
-                copy.set(sf.flatKey, node);
+            final ObjectNode owner = ownerNode(copy, sf.ownerPath);
+            if (owner != null) {
+                final JsonNode node = getAtPath(owner, sf.relativePath());
+                if (node != null) {
+                    owner.set(sf.flatKey, node);
+                }
             }
         }
         return copy;
     }
 
-    /** Move each {@code @Section} field from its flat key to its nested location in the candidate tree. */
+    /** Move each {@code @Section} field from its flat key to its nested location within its owning object. */
     private void relocateForWrite(final ObjectNode candidate) {
         for (final SectionField sf : sectionFields) {
-            if (candidate.has(sf.flatKey)) {
-                setAtPath(candidate, sf.fullPath, candidate.remove(sf.flatKey));
+            final ObjectNode owner = ownerNode(candidate, sf.ownerPath);
+            if (owner != null && owner.has(sf.flatKey)) {
+                setAtPath(owner, sf.relativePath(), owner.remove(sf.flatKey));
             }
         }
+    }
+
+    /** The owning object at {@code ownerPath} ({@code ""} = the root node), or null if it is absent. */
+    private static ObjectNode ownerNode(final ObjectNode root, final String ownerPath) {
+        if (ownerPath.isEmpty()) {
+            return root;
+        }
+        final JsonNode n = getAtPath(root, ownerPath);
+        return n instanceof ObjectNode ? (ObjectNode) n : null;
     }
 
     private static JsonNode getAtPath(final ObjectNode root, final String dotted) {

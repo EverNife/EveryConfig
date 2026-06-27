@@ -1,11 +1,14 @@
 package br.com.finalcraft.everyconfig.binding.schema;
 
+import br.com.finalcraft.everyconfig.annotation.Section;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.databind.BeanDescription;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
 
+import java.lang.reflect.Field;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,7 +56,66 @@ public final class SchemaCache {
         if (discriminator != null && !declared.containsKey(discriminator)) {
             declared.put(discriminator, null);
         }
+
+        // A @Section field is relocated to a nested dotted path on save, so its flat key is not where the
+        // data ends up. Mirror the relocation in the schema: drop the flat key and declare the section
+        // spine (root segment ... leaf) as owned, so the relocated subtree is never pruned as obsolete.
+        final Map<String, Object> sectionTree = sectionSpine(type.getRawClass(), declared);
+        if (!sectionTree.isEmpty()) {
+            return new ClosedSchema(this, declared, buildSpineChildren(sectionTree));
+        }
         return new ClosedSchema(this, declared);
+    }
+
+    /**
+     * Removes each {@code @Section} field's flat key from {@code declared} and returns a nested map of the
+     * section paths ({@code segment -> sub-map}, leaf marked by a non-map value), shared across fields so
+     * sibling sections under one path merge into one spine.
+     */
+    private static Map<String, Object> sectionSpine(final Class<?> raw, final Map<String, JavaType> declared) {
+        final Map<String, Object> tree = new LinkedHashMap<>();
+        for (final Field f : BindingNames.allFields(raw)) {
+            final Section s = f.getAnnotation(Section.class);
+            if (s == null || s.value().isEmpty()) {
+                continue;
+            }
+            final String flatKey = BindingNames.keyFor(f);
+            declared.remove(flatKey);
+            insertSpine(tree, (s.value() + "." + flatKey).split("\\."));
+        }
+        return tree;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void insertSpine(final Map<String, Object> tree, final String[] segments) {
+        Map<String, Object> cur = tree;
+        for (int i = 0; i < segments.length; i++) {
+            if (i == segments.length - 1) {
+                cur.put(segments[i], Boolean.TRUE); // leaf marker (the relocated field's own value)
+            } else {
+                Object next = cur.get(segments[i]);
+                if (!(next instanceof Map)) {
+                    next = new LinkedHashMap<String, Object>();
+                    cur.put(segments[i], next);
+                }
+                cur = (Map<String, Object>) next;
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Schema> buildSpineChildren(final Map<String, Object> tree) {
+        final Map<String, Schema> out = new LinkedHashMap<>();
+        for (final Map.Entry<String, Object> e : tree.entrySet()) {
+            if (e.getValue() instanceof Map) {
+                out.put(e.getKey(), new ClosedSchema(this, Collections.<String, JavaType>emptyMap(),
+                        buildSpineChildren((Map<String, Object>) e.getValue())));
+            } else {
+                // The leaf is the relocated field's own value; leave it OPEN so its contents are not pruned.
+                out.put(e.getKey(), Schema.OPEN);
+            }
+        }
+        return out;
     }
 
     /**

@@ -244,8 +244,9 @@ DbConfig db = cfg.loadAs(DbConfig.class, codec);    // lenient by default
 
 - **Lenient bind (default):** a value that can't be coerced is recorded as a `LoadIssue` and the field keeps
   its real default; `STRICT` throws a `BindException` on the first mismatch.
-- **Annotations:** `@Key` (rename + case), `@Comment` (+ `CommentMode`), `@Section` (nested placement), `@Id`
-  (collection indexing), `@PostInject` (run after binding). Native Jackson annotations keep working too.
+- **Annotations:** `@Key` (rename + case), `@Comment` (+ `CommentMode`), `@Section` (nested placement, on
+  top-level or nested-POJO fields), `@Id` (collection indexing), `@PostInject` (run after binding). Native
+  Jackson annotations keep working too.
 
 **→ Deep dives: [Typed Entity Binding](https://github.com/EverNife/EveryConfig/wiki/Entity-Binding) ·
 [Annotations](https://github.com/EverNife/EveryConfig/wiki/Annotations)**
