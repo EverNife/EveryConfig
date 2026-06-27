@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'br.com.finalcraft'
-version = libs.versions.finalconfig.get()
+version = libs.versions.everyconfig.get()
 
 repositories {
     mavenLocal()
@@ -81,7 +81,7 @@ test {
 publishing {
     publications {
         maven(MavenPublication) {
-            artifactId = 'FinalConfig'
+            artifactId = 'EveryConfig'
             from components.java
         }
     }

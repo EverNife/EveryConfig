@@ -4,7 +4,7 @@ import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CodecException;
 import br.com.finalcraft.everyconfig.codec.CommentAware;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
-import br.com.finalcraft.everyconfig.codec.FCMapperProfiles;
+import br.com.finalcraft.everyconfig.codec.ECMapperProfiles;
 import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
@@ -42,7 +42,7 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
     private static final char SEP = '.';
 
     /** One shared, isolated default mapper reused across every default-constructed instance. */
-    private static final ObjectMapper DEFAULT = FCMapperProfiles.strictJson(buildJsoncMapper());
+    private static final ObjectMapper DEFAULT = ECMapperProfiles.strictJson(buildJsoncMapper());
 
     private final ObjectMapper mapper;
 
@@ -52,7 +52,7 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
 
     /** Uses an isolated copy of the user's mapper so a later external mutation cannot leak in. */
     public JsoncCodec(final ObjectMapper userMapper) {
-        this.mapper = FCMapperProfiles.isolate(userMapper, () -> DEFAULT);
+        this.mapper = ECMapperProfiles.isolate(userMapper, () -> DEFAULT);
     }
 
     private static JsonMapper buildJsoncMapper() {

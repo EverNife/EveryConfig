@@ -33,7 +33,7 @@ final class FilePollWatcher implements Backend.Watcher {
         this.pollMillis = Math.max(1L, pollInterval.toMillis());
         this.onChange = onChange;
         this.baseline = probe();
-        this.thread = new Thread(this::run, "finalconfig-watcher-" + filePath.getFileName());
+        this.thread = new Thread(this::run, "everyconfig-watcher-" + filePath.getFileName());
         this.thread.setDaemon(true);
     }
 
