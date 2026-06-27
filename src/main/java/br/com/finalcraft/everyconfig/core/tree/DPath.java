@@ -4,11 +4,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Dotted-path utilities. The empty string and {@code null} both denote the root.
+ * Dotted-path utilities (the "D" is for the dotted-path grammar of the dynamic API; named to avoid
+ * clashing with {@link java.nio.file.Path}). The empty string and {@code null} both denote the root.
  */
-public final class Path {
+public final class DPath {
 
-    private Path() {
+    private DPath() {
     }
 
     /** {@code "a.b.c"} → {@code ["a","b","c"]}; {@code ""}/{@code null} → empty array. */

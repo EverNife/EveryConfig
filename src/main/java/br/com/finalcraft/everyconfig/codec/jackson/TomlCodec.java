@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -272,7 +273,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
      * a number stored as a string), and small integers — the common case — are emitted normally.
      */
     private String integerToken(final JsonNode node) {
-        final java.math.BigInteger value = node.bigIntegerValue();
+        final BigInteger value = node.bigIntegerValue();
         if (value.bitLength() <= 31) {
             return dumpInline(node); // fits an int comfortably; never affected
         }

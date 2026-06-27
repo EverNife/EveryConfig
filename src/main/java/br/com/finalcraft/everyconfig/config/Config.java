@@ -12,13 +12,14 @@ import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CommentAware;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.CodecException;
+import br.com.finalcraft.everyconfig.codec.CodecRegistry;
 import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.coerce.NodeCoercion;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
-import br.com.finalcraft.everyconfig.core.tree.Path;
+import br.com.finalcraft.everyconfig.core.tree.DPath;
 import br.com.finalcraft.everyconfig.core.tree.PathOptions;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -27,7 +28,11 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -122,7 +127,7 @@ public class Config implements AutoCloseable {
 
     /** Join a base path with a sub-path using this config's separator (used by {@link ConfigSection}). */
     public String concat(final String base, final String sub) {
-        return Path.join(base, sub, sep());
+        return DPath.join(base, sub, sep());
     }
 
     // ==================== navigation ====================
@@ -131,13 +136,13 @@ public class Config implements AutoCloseable {
      *  present-but-null value is distinct from an absent path. */
     private JsonNode resolve(final String path) {
         JsonNode cur = root;
-        for (final String seg : Path.split(path, sep())) {
+        for (final String seg : DPath.split(path, sep())) {
             if (cur instanceof ObjectNode) {
                 if (!((ObjectNode) cur).has(seg)) {
                     return null;
                 }
                 cur = cur.get(seg);
-            } else if (cur instanceof ArrayNode && Path.isIndex(seg)) {
+            } else if (cur instanceof ArrayNode && DPath.isIndex(seg)) {
                 cur = cur.get(Integer.parseInt(seg));
                 if (cur == null) {
                     return null;
@@ -165,7 +170,7 @@ public class Config implements AutoCloseable {
     /** Write navigation: walks to the leaf's parent, creating intermediate objects as needed. Only
      *  ever mints ObjectNodes — a numeric segment never grows an array on the write path. */
     private ParentAndKey vivify(final String path) {
-        final String[] segs = Path.split(path, sep());
+        final String[] segs = DPath.split(path, sep());
         if (segs.length == 0) {
             throw new IllegalArgumentException("cannot set the root path as a leaf value");
         }
@@ -192,7 +197,7 @@ public class Config implements AutoCloseable {
     // ==================== set / remove ====================
 
     public void setValue(final String path, final Object value) {
-        if (Path.isRoot(path)) {
+        if (DPath.isRoot(path)) {
             setRoot(value);
             return;
         }
@@ -238,17 +243,17 @@ public class Config implements AutoCloseable {
     }
 
     public boolean removeValue(final String path) {
-        if (Path.isRoot(path)) {
+        if (DPath.isRoot(path)) {
             root.removeAll();
             comments.removeSubtree("");
             return true;
         }
-        final JsonNode parent = resolve(Path.parent(path, sep()));
-        final String leaf = Path.leaf(path, sep());
+        final JsonNode parent = resolve(DPath.parent(path, sep()));
+        final String leaf = DPath.leaf(path, sep());
         boolean removed = false;
         if (parent instanceof ObjectNode) {
             removed = ((ObjectNode) parent).remove(leaf) != null;
-        } else if (parent instanceof ArrayNode && Path.isIndex(leaf)) {
+        } else if (parent instanceof ArrayNode && DPath.isIndex(leaf)) {
             ((ArrayNode) parent).remove(Integer.parseInt(leaf));
             removed = true;
         }
@@ -422,7 +427,7 @@ public class Config implements AutoCloseable {
     public Set<ConfigSection> getKeysSections(final String path) {
         final Set<ConfigSection> out = new LinkedHashSet<>();
         for (final String k : getKeys(path)) {
-            out.add(new ConfigSection(this, Path.join(path, k, sep())));
+            out.add(new ConfigSection(this, DPath.join(path, k, sep())));
         }
         return out;
     }
@@ -467,7 +472,7 @@ public class Config implements AutoCloseable {
      * a config migration; reconciliation never infers a rename by itself.
      */
     public void migrateKey(final String oldPath, final String newPath) {
-        if (Path.isRoot(oldPath) || Path.isRoot(newPath) || oldPath.equals(newPath) || !contains(oldPath)) {
+        if (DPath.isRoot(oldPath) || DPath.isRoot(newPath) || oldPath.equals(newPath) || !contains(oldPath)) {
             return;
         }
         final JsonNode node = resolve(oldPath);
@@ -581,6 +586,30 @@ public class Config implements AutoCloseable {
         return bind(type, codec).bindResult();
     }
 
+    /**
+     * Bind the subtree at {@code path} to a fresh {@code T} — the path-scoped {@link #loadAs}, using the
+     * codec this config was opened with. An absent path binds the type's defaults; a root path
+     * ({@code ""}/{@code null}) binds the whole tree. Runs {@code @PostInject}.
+     *
+     * @throws IllegalStateException if this config was not opened with a codec (e.g. {@code new Config()})
+     */
+    public <T> T getLoadable(final String path, final Class<T> type) {
+        return getLoadable(path, type, requireLifecycleCodec());
+    }
+
+    /** As {@link #getLoadable(String, Class)}, binding through an explicitly supplied {@code codec}. */
+    public <T> T getLoadable(final String path, final Class<T> type, final Codec codec) {
+        return bind(type, codec).bindAt(path);
+    }
+
+    private Codec requireLifecycleCodec() {
+        if (lifecycleCodec == null) {
+            throw new IllegalStateException(
+                    "this Config has no codec; open it via Config.open(...) or pass a codec explicitly");
+        }
+        return lifecycleCodec;
+    }
+
     /** Merge a POJO into this config's tree (the in-memory write side; persistence is the backend's job). */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public void mergeFrom(final Object pojo, final Codec codec) {
@@ -633,21 +662,40 @@ public class Config implements AutoCloseable {
     // ==================== lifecycle (backend-backed) ====================
 
     /**
+     * Opens a Config over a file, choosing the codec from the file's extension via
+     * {@link CodecRegistry#defaults()}. Throws a {@link CodecException} when the extension is missing or
+     * not registered — it never guesses a format.
+     */
+    public static Config open(final String path) {
+        return open(Paths.get(path));
+    }
+
+    /** As {@link #open(String)}, from a {@link File} (its path is used). */
+    public static Config open(final File file) {
+        return open(file.toPath());
+    }
+
+    /** As {@link #open(String)}, choosing the codec from {@code path}'s file-name extension. */
+    public static Config open(final Path path) {
+        return open(path, codecForPath(path));
+    }
+
+    /**
      * Opens a Config over a file. If the file parses, its contents become the tree; if it exists but
      * cannot be parsed, it is backed up to {@code .bak} and an empty tree is used (the file is not
      * overwritten); if it is absent, an empty tree is used and the first {@link #save()} creates it.
      * Never throws on a malformed file — a corrupt config must not block startup.
      */
-    public static Config open(final java.nio.file.Path path, final Codec codec) {
+    public static Config open(final Path path, final Codec codec) {
         return open(path, codec, Backend.Durability.OS_CACHE);
     }
 
     /**
-     * As {@link #open(java.nio.file.Path, Codec)}, but choosing how durably each {@link #save()} must land:
+     * As {@link #open(Path, Codec)}, but choosing how durably each {@link #save()} must land:
      * {@link Backend.Durability#OS_CACHE} (the default) returns once the atomic rename is visible, while
      * {@link Backend.Durability#FSYNC} forces the bytes to the storage device first (slower, crash-safe).
      */
-    public static Config open(final java.nio.file.Path path, final Codec codec,
+    public static Config open(final Path path, final Codec codec,
                               final Backend.Durability durability) {
         final Config cfg = new Config();
         cfg.backend = new AtomicFileBackend(path, durability);
@@ -655,6 +703,15 @@ public class Config implements AutoCloseable {
         cfg.bindCoercionTo(codec);
         cfg.loadInternal(true);
         return cfg;
+    }
+
+    /** Resolves the codec for a file path from its extension, failing fast on an unknown/missing one. */
+    private static Codec codecForPath(final Path path) {
+        final Path name = path.getFileName();
+        if (name == null) {
+            throw new CodecException("path has no file name to resolve a codec: " + path);
+        }
+        return CodecRegistry.defaults().forFile(name.toString());
     }
 
     /**
@@ -820,16 +877,16 @@ public class Config implements AutoCloseable {
     }
 
     /** Enables auto-reload: the file is polled on a daemon thread and the tree refreshed on change. */
-    public Config withAutoReload(final java.time.Duration pollInterval) {
+    public Config withAutoReload(final Duration pollInterval) {
         return withAutoReload(pollInterval, false);
     }
 
     /**
-     * As {@link #withAutoReload(java.time.Duration)}, but {@code detectInPlaceEdits} makes the watcher also
-     * catch a same-size edit landing within one coarse mtime tick (it hashes content each poll instead of
-     * only stat-ing it — a full read per poll, hence opt-in).
+     * As {@link #withAutoReload(Duration)}, but {@code detectInPlaceEdits} makes the watcher also catch a
+     * same-size edit landing within one coarse mtime tick (it hashes content each poll instead of only
+     * stat-ing it — a full read per poll, hence opt-in).
      */
-    public Config withAutoReload(final java.time.Duration pollInterval, final boolean detectInPlaceEdits) {
+    public Config withAutoReload(final Duration pollInterval, final boolean detectInPlaceEdits) {
         requireBackend();
         if (pollInterval == null || pollInterval.isZero() || pollInterval.isNegative()) {
             throw new IllegalArgumentException("auto-reload poll interval must be positive");
