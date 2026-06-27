@@ -227,15 +227,31 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
                 out.append('\n');
                 emit((ObjectNode) val, path, indent + 2, out, comments, order);
             } else if (val instanceof ArrayNode && val.size() > 0) {
-                // A sequence: render the key, then the mapper-dumped block list re-indented beneath it.
+                // A sequence: render the key, then the elements re-indented beneath it.
                 out.append(ind).append(key).append(':');
                 if (side != null) {
                     out.append(side);
                 }
                 out.append('\n');
-                for (final String valueLine : dumpValue(val).split("\n", -1)) {
-                    if (!valueLine.isEmpty()) {
-                        out.append(ind).append("  ").append(valueLine).append('\n');
+                final ArrayNode arr = (ArrayNode) val;
+                if (allValueNodes(arr) && anyElementComment(arr, path, comments)) {
+                    // A scalar sequence with at least one per-element comment: render item by item so each
+                    // comment sits above its element. (Object/nested or uncommented sequences render whole
+                    // below, byte-identical to before.)
+                    for (int i = 0; i < arr.size(); i++) {
+                        final String elemBlock = comments.getComment(path + SEP + i, CommentType.BLOCK);
+                        if (elemBlock != null) {
+                            for (final String commentLine : elemBlock.split("\n", -1)) {
+                                out.append(ind).append("  ").append(prefixComment(commentLine)).append('\n');
+                            }
+                        }
+                        out.append(ind).append("  ").append("- ").append(dumpValue(arr.get(i))).append('\n');
+                    }
+                } else {
+                    for (final String valueLine : dumpValue(val).split("\n", -1)) {
+                        if (!valueLine.isEmpty()) {
+                            out.append(ind).append("  ").append(valueLine).append('\n');
+                        }
                     }
                 }
             } else {
@@ -262,6 +278,26 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
                 }
             }
         }
+    }
+
+    /** True when every element is a scalar (the only kind that carries a tracked per-element comment). */
+    private static boolean allValueNodes(final ArrayNode arr) {
+        for (final JsonNode e : arr) {
+            if (!e.isValueNode()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** True when any element under {@code path} (as {@code path.i}) carries a block comment. */
+    private boolean anyElementComment(final ArrayNode arr, final String path, final CommentTree comments) {
+        for (int i = 0; i < arr.size(); i++) {
+            if (comments.getComment(path + SEP + i, CommentType.BLOCK) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Captured key order first (for keys still present), then any live keys not in the snapshot. */
@@ -299,6 +335,8 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
         final Deque<Frame> stack = new ArrayDeque<>();
         final List<String> pending = new ArrayList<>(); // comment lines + "" blanks since the last key
         boolean firstKeySeen = false;
+        String currentArrayPath = null; // the scalar sequence currently being read, for element indexing
+        int arrayElementIndex = 0;
 
         for (final String raw : yaml.split("\n", -1)) {
             final String line = raw.endsWith("\r") ? raw.substring(0, raw.length() - 1) : raw;
@@ -313,7 +351,19 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
                 continue;
             }
             if (trimmed.startsWith("- ") || trimmed.equals("-")) {
-                pending.clear(); // comments on list items are not tracked
+                final String afterDash = trimmed.equals("-") ? "" : trimmed.substring(2).trim();
+                // Track a per-element block comment only for a SCALAR item; an object item ("- key: value")
+                // is out of scope and handled as before, so the key stack is never disturbed.
+                if (!afterDash.isEmpty() && keyColon(afterDash) < 0 && !stack.isEmpty()) {
+                    final String arrayPath = pathOfStackTop(stack);
+                    if (!arrayPath.equals(currentArrayPath)) {
+                        currentArrayPath = arrayPath;
+                        arrayElementIndex = 0;
+                    }
+                    assignBlockComment(tree, arrayPath + SEP + arrayElementIndex, pending);
+                    arrayElementIndex++;
+                }
+                pending.clear();
                 continue;
             }
 
@@ -331,6 +381,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
             }
             final String path = pathOf(stack, key);
             stack.push(new Frame(indent, key));
+            currentArrayPath = null; // a key ends any scalar-sequence element run
 
             // The block above the very first key may be a file header (a comment block separated from
             // the key by a blank line) rather than the key's own comment; peel it off if so.
@@ -368,6 +419,32 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
             tree.setFooter(footer);
         }
         return tree;
+    }
+
+    /** The dotted path of the innermost frame (the key whose value the current sequence belongs to). */
+    private static String pathOfStackTop(final Deque<Frame> stack) {
+        final StringBuilder sb = new StringBuilder();
+        final Iterator<Frame> it = stack.descendingIterator(); // outermost -> innermost
+        while (it.hasNext()) {
+            if (sb.length() > 0) {
+                sb.append(SEP);
+            }
+            sb.append(it.next().key);
+        }
+        return sb.toString();
+    }
+
+    /** Assign the drained {@code pending} lines as {@code path}'s block comment + blank-lines-before. */
+    private void assignBlockComment(final CommentTree tree, final String path, final List<String> pendingLines) {
+        int leadingBlanks = 0;
+        while (leadingBlanks < pendingLines.size() && pendingLines.get(leadingBlanks).isEmpty()) {
+            leadingBlanks++;
+        }
+        tree.setBlankLinesBefore(path, leadingBlanks);
+        final List<String> blockLines = extractBlockLines(pendingLines);
+        if (!blockLines.isEmpty()) {
+            tree.putFileComment(path, String.join("\n", blockLines), CommentType.BLOCK);
+        }
     }
 
     /**
