@@ -66,6 +66,7 @@ class EntityBinderReadTest {
         final EntityBinder<Cfg> binder = configFrom("{\"port\":\"NaN\",\"name\":\"x\"}").bind(Cfg.class, codec);
         final Cfg cfg = binder.bind();
         assertFalse(binder.lastLoadIssues().isEmpty()); // the bad port was recorded
+        assertEquals(25565, cfg.port);                  // the bad value was skipped: the default is kept
         assertEquals("x", cfg.name);                    // the rest still bound
     }
 

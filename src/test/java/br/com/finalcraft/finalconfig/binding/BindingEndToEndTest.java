@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The full load -> bind -> mutate -> merge -> emit cycle: the tree wins (unknown user key survives), the
@@ -26,6 +27,9 @@ class BindingEndToEndTest {
 
         @JsonProperty("max-pool")
         public int maxPool = 10;
+
+        @Comment("pool timeout in seconds")
+        public int timeout = 30; // a NEW key, absent from the on-disk file
 
         @PostInject
         void validate() {
@@ -61,10 +65,13 @@ class BindingEndToEndTest {
         assertEquals(25, c.getInt("max-pool"));
 
         final String emitted = yaml.writeWithComments(c.getRoot(), c.getCommentTree(), c.getFileKeyOrder());
-        assertTrue(emitted.contains("# my header"), emitted);                 // header preserved
-        assertTrue(emitted.contains("# JDBC url; edit me"), emitted);         // seeded field comment
+        assertTrue(emitted.contains("# my header"), emitted);                 // file header preserved
         assertTrue(emitted.contains("user edited"), emitted);                 // user side comment preserved
         assertTrue(emitted.contains("max-pool: 25"), emitted);               // POJO value merged in
         assertTrue(emitted.contains("legacy-key: keepme"), emitted);         // unknown key emitted
+        assertTrue(emitted.contains("# pool timeout in seconds"), emitted);  // seed fires for the NEW key
+        // jdbc-url already existed in the file (no block comment), so its @Comment seed is suppressed —
+        // a comment the user never had (or deleted) is not injected for an existing key.
+        assertFalse(emitted.contains("# JDBC url"), emitted);
     }
 }

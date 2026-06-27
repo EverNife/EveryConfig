@@ -12,6 +12,7 @@ import br.com.finalcraft.finalconfig.core.comment.CommentType;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
@@ -167,15 +168,22 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
     public String writeScalar(final Object leaf) {
         if (leaf instanceof JsonNode) {
             final JsonNode node = (JsonNode) leaf;
-            if (node.isContainerNode() && node.size() > 0) {
+            if (node.isObject() && node.size() > 0) {
                 throw new CodecException(
-                        "writeScalar received a populated container; the emitter must recurse into it");
+                        "writeScalar received a populated object; the emitter must recurse into it");
             }
         }
+        return dumpValue(leaf);
+    }
+
+    /**
+     * Serialize a value through the mapper and strip the leading document marker and trailing newlines,
+     * so the structure emitter alone controls placement. Used for scalars and for sequences (whose
+     * elements carry no tracked comments and so are rendered whole, then re-indented under their key).
+     */
+    private String dumpValue(final Object value) {
         try {
-            String s = mapper.writeValueAsString(leaf);
-            // The YAMLMapper emits a trailing newline (and may emit a doc marker for some shapes);
-            // strip both so the structure emitter owns placement.
+            String s = mapper.writeValueAsString(value);
             if (s.startsWith("---\n")) {
                 s = s.substring(4);
             }
@@ -184,7 +192,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
             }
             return s;
         } catch (final Exception e) {
-            throw new CodecException("failed to dump leaf value", e);
+            throw new CodecException("failed to dump value", e);
         }
     }
 
@@ -216,6 +224,18 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
                 }
                 out.append('\n');
                 emit((ObjectNode) val, path, indent + 2, out, comments, order);
+            } else if (val instanceof ArrayNode && val.size() > 0) {
+                // A sequence: render the key, then the mapper-dumped block list re-indented beneath it.
+                out.append(ind).append(key).append(':');
+                if (side != null) {
+                    out.append(side);
+                }
+                out.append('\n');
+                for (final String valueLine : dumpValue(val).split("\n", -1)) {
+                    if (!valueLine.isEmpty()) {
+                        out.append(ind).append("  ").append(valueLine).append('\n');
+                    }
+                }
             } else {
                 final String dumped = writeScalar(val);
                 if (dumped.indexOf('\n') >= 0) {

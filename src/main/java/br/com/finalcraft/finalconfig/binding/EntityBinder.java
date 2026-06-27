@@ -1,6 +1,7 @@
 package br.com.finalcraft.finalconfig.binding;
 
 import br.com.finalcraft.finalconfig.annotation.Comment;
+import br.com.finalcraft.finalconfig.annotation.Section;
 import br.com.finalcraft.finalconfig.codec.Codec;
 import br.com.finalcraft.finalconfig.codec.CommentFidelity;
 import br.com.finalcraft.finalconfig.codec.ObjectMapperAware;
@@ -8,12 +9,15 @@ import br.com.finalcraft.finalconfig.config.Config;
 import br.com.finalcraft.finalconfig.core.comment.CommentTree;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectReader;
-import com.fasterxml.jackson.databind.deser.DeserializationProblemHandler;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import java.io.IOException;
 import java.lang.reflect.Field;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -26,8 +30,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * lenient policy a single bad value is recorded as a {@link LoadIssue} rather than failing the load.
  */
 public final class EntityBinder<T> {
-
-    private static final DeserializationProblemHandler LENIENT = new LenientProblemHandler();
 
     /** One schema cache per shared codec mapper, so a type is introspected once and reused. */
     private static final ConcurrentHashMap<ObjectMapper, SchemaCache> SCHEMA_CACHES = new ConcurrentHashMap<>();
@@ -49,6 +51,20 @@ public final class EntityBinder<T> {
         this.codec = codec;
         this.mapper = ((ObjectMapperAware) codec).objectMapper();
         this.options = options != null ? options : BindOptions.defaults();
+        rejectUnsupportedSection(type.getRawClass());
+    }
+
+    /**
+     * Fail loudly rather than silently misplace data: section placement of a flat field is not wired yet,
+     * so a {@code @Section} field is rejected at bind time instead of being emitted at the wrong path.
+     */
+    private static void rejectUnsupportedSection(final Class<?> raw) {
+        for (final Field f : BindingNames.allFields(raw)) {
+            if (f.isAnnotationPresent(Section.class)) {
+                throw new BindException("@Section is not supported yet (on "
+                        + raw.getSimpleName() + "." + f.getName() + ")");
+            }
+        }
     }
 
     ObjectMapper mapper() {
@@ -157,39 +173,127 @@ public final class EntityBinder<T> {
             }
             final String key = BindingNames.keyFor(f);
             final String path = basePath.isEmpty() ? key : basePath + config.pathSeparator() + key;
-            if (!comments.hasUserComment(path)) {
+            // Seed only the first time the path is written; a comment the user deleted stays deleted.
+            if (!config.isPersisted(path) && !comments.hasUserComment(path)) {
                 comments.seedComment(path, String.join("\n", c.value()));
             }
         }
     }
 
     private T doBind(final T base, final JsonNode source) {
-        LoadIssueCollector.begin();
+        final List<LoadIssue> issues = new ArrayList<>();
         T result;
         try {
-            if (base != null) {
-                ObjectReader reader = mapper.readerForUpdating(base);
-                if (options.coercion() == BindOptions.Coercion.LENIENT) {
-                    reader = reader.withHandler(LENIENT);
-                }
-                result = reader.readValue(source);
-            } else if (options.coercion() == BindOptions.Coercion.LENIENT) {
-                result = mapper.reader().forType(type).withHandler(LENIENT).readValue(source);
-            } else {
-                result = mapper.convertValue(source, type);
-            }
+            result = options.coercion() == BindOptions.Coercion.STRICT
+                    ? bindOnce(base, source)
+                    : bindLenient(base, source, issues);
         } catch (final BindException e) {
             throw e;
         } catch (final Exception e) {
             throw new BindException("failed to bind tree to " + type, e);
-        } finally {
-            lastIssues = LoadIssueCollector.end();
         }
+        lastIssues = Collections.unmodifiableList(issues);
         if (result instanceof LoadIssueAware) {
             ((LoadIssueAware) result).setLoadIssues(lastIssues);
         }
         PostInjectInvoker.invoke(result, lastIssues);
         return result;
+    }
+
+    private T bindOnce(final T base, final JsonNode source) throws IOException {
+        if (base != null) {
+            return mapper.readerForUpdating(base).readValue(source);
+        }
+        return mapper.reader().forType(type).readValue(source);
+    }
+
+    /**
+     * Tolerant bind: a value that cannot be coerced is removed from a working copy of the tree and
+     * recorded, then the bind is retried — so the offending field keeps the default the base instance
+     * already holds instead of being overwritten with a zero. A failure that cannot be isolated to a
+     * single path stops the retry and the best-effort instance (good fields applied) is returned.
+     */
+    private T bindLenient(final T base, final JsonNode source, final List<LoadIssue> issues) throws IOException {
+        final JsonNode working = source.deepCopy();
+        final int maxAttempts = 256;
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+                return bindOnce(base, working);
+            } catch (final JsonMappingException e) {
+                final List<JsonMappingException.Reference> path = e.getPath();
+                issues.add(new LoadIssue(pathString(path), valueAt(working, path), type.getRawClass(),
+                        shortMessage(e)));
+                if (!removeAt(working, path)) {
+                    break;
+                }
+            }
+        }
+        return base != null ? base : constructDefault();
+    }
+
+    private static String pathString(final List<JsonMappingException.Reference> path) {
+        final StringBuilder sb = new StringBuilder();
+        for (final JsonMappingException.Reference r : path) {
+            if (r.getFieldName() != null) {
+                if (sb.length() > 0) {
+                    sb.append('.');
+                }
+                sb.append(r.getFieldName());
+            } else if (r.getIndex() >= 0) {
+                sb.append('[').append(r.getIndex()).append(']');
+            }
+        }
+        return sb.length() == 0 ? "?" : sb.toString();
+    }
+
+    private static Object valueAt(final JsonNode root, final List<JsonMappingException.Reference> path) {
+        JsonNode cur = root;
+        for (final JsonMappingException.Reference r : path) {
+            if (cur == null) {
+                return null;
+            }
+            cur = r.getFieldName() != null ? cur.get(r.getFieldName()) : cur.get(r.getIndex());
+        }
+        if (cur == null) {
+            return null;
+        }
+        return cur.isValueNode() ? cur.asText() : cur.toString();
+    }
+
+    /** Remove the node at {@code path} (a field) or null it out (an array element); false if unreachable. */
+    private static boolean removeAt(final JsonNode root, final List<JsonMappingException.Reference> path) {
+        if (path.isEmpty()) {
+            return false;
+        }
+        JsonNode cur = root;
+        for (int i = 0; i < path.size() - 1; i++) {
+            final JsonMappingException.Reference r = path.get(i);
+            if (r.getFieldName() != null && cur instanceof ObjectNode) {
+                cur = cur.get(r.getFieldName());
+            } else if (cur instanceof ArrayNode && r.getIndex() >= 0) {
+                cur = cur.get(r.getIndex());
+            } else {
+                return false;
+            }
+            if (cur == null) {
+                return false;
+            }
+        }
+        final JsonMappingException.Reference last = path.get(path.size() - 1);
+        if (last.getFieldName() != null && cur instanceof ObjectNode) {
+            ((ObjectNode) cur).remove(last.getFieldName());
+            return true;
+        }
+        if (cur instanceof ArrayNode && last.getIndex() >= 0) {
+            ((ArrayNode) cur).set(last.getIndex(), NullNode.getInstance());
+            return true;
+        }
+        return false;
+    }
+
+    private static String shortMessage(final JsonMappingException e) {
+        final String m = e.getOriginalMessage();
+        return m != null ? m : e.getMessage();
     }
 
     /**

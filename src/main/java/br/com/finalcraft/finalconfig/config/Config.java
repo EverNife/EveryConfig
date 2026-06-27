@@ -58,6 +58,7 @@ public class Config {
     private final Set<String> loadedPaths;
 
     private transient boolean newDefaultValueToSave = false;
+    private List<LoadIssue> lastIdCollectionIssues = Collections.emptyList();
 
     public Config() {
         this(JsonNodeFactory.instance.objectNode(), new CommentTree(), KeyOrder.empty());
@@ -259,6 +260,11 @@ public class Config {
     /** The raw Jackson node at {@code path}, or null when absent — the binding layer's read entry point. */
     public JsonNode getNode(final String path) {
         return resolve(path);
+    }
+
+    /** True when {@code path} was present in the tree at load time — the "first write?" oracle for seeds. */
+    public boolean isPersisted(final String path) {
+        return loadedPaths.contains(path);
     }
 
     public String getString(final String path) {
@@ -571,7 +577,15 @@ public class Config {
     /** Read an {@code @Id}-indexed section at {@code path} back into a list, restoring each id from its key. */
     public <T> List<T> readIdCollection(final String path, final Class<T> elementType, final Codec codec) {
         final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
-        return IdIndexer.fromIndexed(getNode(path), elementType, mapper, new ArrayList<LoadIssue>());
+        final List<LoadIssue> issues = new ArrayList<>();
+        final List<T> out = IdIndexer.fromIndexed(getNode(path), elementType, mapper, issues);
+        this.lastIdCollectionIssues = Collections.unmodifiableList(issues);
+        return out;
+    }
+
+    /** Issues recorded by the most recent {@link #readIdCollection} (e.g. a body id disagreeing with its key). */
+    public List<LoadIssue> lastIdCollectionIssues() {
+        return lastIdCollectionIssues;
     }
 
     // ==================== save-defaults bookkeeping ====================

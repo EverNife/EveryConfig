@@ -70,6 +70,20 @@ class YamlCodecTest {
     }
 
     @Test
+    void emitterRendersScalarAndObjectListsRoundTrip() {
+        final YamlCodec codec = new YamlCodec();
+        final String yaml =
+                "items:\n- a\n- b\n"
+              + "servers:\n- host: h1\n  port: 1\n- host: h2\n  port: 2\n"
+              + "x: 9\n";
+        final JsonNode tree = codec.readTree(yaml);
+        final CommentLoad load = codec.readComments(yaml);
+        final String emitted = codec.writeWithComments(tree, load.comments, load.keyOrder);
+        // The structure emitter (not just writeTreePlain) must round-trip lists through readTree.
+        assertEquals(tree, codec.readTree(emitted));
+    }
+
+    @Test
     void writeScalarThrowsOnPopulatedContainer() {
         final YamlCodec codec = new YamlCodec();
         final ObjectNode populated = JsonNodeFactory.instance.objectNode();

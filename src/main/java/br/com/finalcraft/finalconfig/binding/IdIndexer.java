@@ -1,7 +1,9 @@
 package br.com.finalcraft.finalconfig.binding;
 
+import com.fasterxml.jackson.databind.BeanDescription;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.lang.reflect.Field;
@@ -34,7 +36,8 @@ public final class IdIndexer {
             }
             final JsonNode body = mapper.valueToTree(entity);
             if (body instanceof ObjectNode) {
-                ((ObjectNode) body).remove(BindingNames.keyFor(id)); // the section key already carries it
+                // Strip the id under the SAME key the mapper emitted it as (the section key already carries it).
+                ((ObjectNode) body).remove(resolvedIdKey(entity.getClass(), id, mapper));
             }
             out.set(String.valueOf(idValue), body);
         }
@@ -62,6 +65,18 @@ public final class IdIndexer {
             out.add(entity);
         }
         return out;
+    }
+
+    /** The key the mapper actually emits the {@code @Id} field under, so the body strip matches it exactly. */
+    private static String resolvedIdKey(final Class<?> type, final java.lang.reflect.Field idField,
+                                        final ObjectMapper mapper) {
+        final BeanDescription desc = mapper.getSerializationConfig().introspect(mapper.constructType(type));
+        for (final BeanPropertyDefinition p : desc.findProperties()) {
+            if (p.getField() != null && idField.equals(p.getField().getAnnotated())) {
+                return p.getName();
+            }
+        }
+        return BindingNames.keyFor(idField);
     }
 
     private static Object castKey(final String key, final Class<?> idType) {
