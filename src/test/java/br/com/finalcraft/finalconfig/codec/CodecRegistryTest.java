@@ -1,6 +1,8 @@
 package br.com.finalcraft.finalconfig.codec;
 
 import br.com.finalcraft.finalconfig.codec.jackson.JsonCodec;
+import br.com.finalcraft.finalconfig.codec.jackson.JsoncCodec;
+import br.com.finalcraft.finalconfig.codec.jackson.TomlCodec;
 import br.com.finalcraft.finalconfig.codec.jackson.YamlCodec;
 import org.junit.jupiter.api.Test;
 
@@ -18,6 +20,12 @@ class CodecRegistryTest {
     @Test
     void forFileResolvesJson() {
         assertTrue(CodecRegistry.defaults().forFile("a.json") instanceof JsonCodec);
+    }
+
+    @Test
+    void forFileResolvesTomlAndJsonc() {
+        assertTrue(CodecRegistry.defaults().forFile("a.toml") instanceof TomlCodec);
+        assertTrue(CodecRegistry.defaults().forFile("a.jsonc") instanceof JsoncCodec);
     }
 
     @Test
