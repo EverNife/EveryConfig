@@ -116,35 +116,31 @@ dependencies {
 
 ```java
 import br.com.finalcraft.everyconfig.config.Config;
-import br.com.finalcraft.everyconfig.codec.jackson.YamlCodec;
 
-import java.nio.file.Paths;
+Config cfg = Config.open("server.yml"); // codec chosen from the .yml extension (fail-fast if unknown)
 
-Config cfg = Config.open(Paths.get("server.yml"), new YamlCodec());
-
-cfg.
-
-setValue("server.host","localhost");
-
+cfg.setValue("server.host", "localhost");
 int port = cfg.getOrSetDefaultValue("server.port", 25565, "the listen port"); // seeds value + comment if absent
 
-cfg.
-
-save(); // atomic write; comments + key order preserved
+cfg.save(); // atomic write; comments + key order preserved
 ```
 
 Switching format is a one-line change — everything below `Config.open(...)` stays identical:
 
 ```java
-Config cfg = Config.open(Paths.get("server.toml"), new TomlCodec());
+Config cfg = Config.open("server.toml"); // or pass a codec explicitly: Config.open(path, new TomlCodec())
 ```
+
+> `Config.open` accepts a `String`, `File` or `Path` and derives the codec from the file extension via the
+> `CodecRegistry` — it **never guesses**, throwing a `CodecException` on a missing/unknown extension. Pass a
+> codec explicitly (`Config.open(path, codec)`) to override.
 
 Need types? Bind the tree to a POJO:
 
 ```java
-DbConfig db = cfg.loadAs(DbConfig.class, codec); // bind + run @PostInject; lenient by default
+DbConfig db = cfg.getLoadable("database", DbConfig.class); // bind the subtree at a path (path-scoped loadAs)
 db.maxPool = 25;
-cfg.mergeFrom(db, codec);                         // merge the POJO back into the tree (unknown keys survive)
+cfg.mergeFrom(db, codec);                                  // merge the POJO back (unknown keys survive)
 cfg.save();
 ```
 
@@ -243,10 +239,13 @@ DbConfig db = cfg.loadAs(DbConfig.class, codec);    // lenient by default
 ```
 
 - **Lenient bind (default):** a value that can't be coerced is recorded as a `LoadIssue` and the field keeps
-  its real default; `STRICT` throws a `BindException` on the first mismatch.
-- **Annotations:** `@Key` (rename + case), `@Comment` (+ `CommentMode`), `@Section` (nested placement, on
-  top-level or nested-POJO fields), `@Id` (collection indexing), `@PostInject` (run after binding). Native
-  Jackson annotations keep working too.
+  its real default; `STRICT` throws a `BindException` on the first mismatch. Use `loadAsResult(...)` /
+  `bindResult()` to get a `BindResult<T>` carrying the value **and** the issues together.
+- **Annotations:** `@Key` (rename + case, or class-wide via `@JsonNaming(KeyCaseStrategy.Kebab.class)`),
+  `@Comment` (+ `CommentMode`), `@Section` (nested placement, on top-level **or nested-POJO** fields), `@Id`
+  (collection indexing), `@PostInject` (run after binding). Native Jackson annotations keep working too.
+- **Obsolete keys** (in the file, not declared by the POJO): `ObsoletePolicy.PRESERVE` (default), `REMOVE`
+  (strip), or `COMMENT_OUT` (keep + stamp a deprecation comment, on comment-capable codecs).
 
 **→ Deep dives: [Typed Entity Binding](https://github.com/EverNife/EveryConfig/wiki/Entity-Binding) ·
 [Annotations](https://github.com/EverNife/EveryConfig/wiki/Annotations)**
@@ -279,12 +278,14 @@ List<Account> back = cfg.readIdCollection("accounts", Account.class, codec);
 ## Lifecycle, reload & watching
 
 ```java
-Config cfg = Config.open(path, codec);   // absent -> empty; malformed -> .bak + empty (never throws)
+Config cfg = Config.open("app.yml");     // codec from the extension; absent -> empty; malformed -> .bak (never throws)
+Config db  = Config.open(path, codec, Durability.FSYNC); // optional: force bytes to disk on each save (crash-safe)
 cfg.save();                              // atomic write under a per-config lock
 cfg.saveIfDirty();                       // no I/O when nothing changed
 cfg.saveAsync();                         // on a shared daemon executor
 cfg.reload();                            // re-read from disk
-cfg.onReload(() -> ...).withAutoReload(Duration.ofSeconds(2)); // poll on a daemon thread
+cfg.onReload(() -> ...).withAutoReload(Duration.ofSeconds(2));       // poll on a daemon thread
+cfg.onReload(() -> ...).withAutoReload(Duration.ofSeconds(2), true); // also catch a same-size edit (hashes content)
 cfg.close();                             // idempotent; stops the watcher
 ```
 
@@ -328,7 +329,7 @@ export JAVA_HOME=/path/to/jdk-25      # PowerShell: $env:JAVA_HOME = "C:\path\to
 EveryConfig/
 └── src/main/java/br/com/finalcraft/everyconfig/
     ├── config/                  # Config (dynamic API + lifecycle) + config.section (ConfigSection)
-    ├── core/                    # the canonical model: core.tree (Path), core.coerce (NodeCoercion),
+    ├── core/                    # the canonical model: core.tree (DPath), core.coerce (NodeCoercion),
     │                            #   core.comment (CommentTree), KeyOrder
     ├── codec/                   # Codec SPI, CommentFidelity, registry, mapper profiles
     │   └── jackson/             # JsonCodec, YamlCodec, TomlCodec, JsoncCodec
