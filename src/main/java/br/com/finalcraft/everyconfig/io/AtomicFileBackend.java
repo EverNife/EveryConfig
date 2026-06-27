@@ -13,6 +13,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
+import java.util.zip.CRC32;
 
 /**
  * A {@link Backend} over a single file. Writes go through a unique sibling temp file plus an atomic
@@ -112,7 +113,16 @@ public final class AtomicFileBackend implements Backend {
         } finally {
             Files.deleteIfExists(tmp);
         }
-        return new Fingerprint(filePath.toFile().lastModified(), data.length);
+        // Carry a content hash of exactly the bytes just written, so a content-hashing watcher can still
+        // recognize "our own write" when it reads those identical bytes back.
+        return new Fingerprint(filePath.toFile().lastModified(), data.length, crc32(data));
+    }
+
+    /** CRC32 over the raw bytes; the watcher hashes file content the same way to detect same-size edits. */
+    static long crc32(final byte[] data) {
+        final CRC32 crc = new CRC32();
+        crc.update(data, 0, data.length);
+        return crc.getValue();
     }
 
     /** Writes the temp file, forcing its bytes to the storage device first when {@code FSYNC} is asked. */
@@ -160,6 +170,12 @@ public final class AtomicFileBackend implements Backend {
 
     @Override
     public Watcher watch(final Duration pollInterval, final Runnable onExternalChange) {
-        return new FilePollWatcher(filePath, pollInterval, onExternalChange);
+        return watch(pollInterval, onExternalChange, false);
+    }
+
+    @Override
+    public Watcher watch(final Duration pollInterval, final Runnable onExternalChange,
+                         final boolean detectInPlaceEdits) {
+        return new FilePollWatcher(filePath, pollInterval, onExternalChange, detectInPlaceEdits);
     }
 }
