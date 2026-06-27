@@ -184,7 +184,8 @@ public final class EntityBinder<T> {
             relocateForWrite(candObj);
             mergeOptions = options.withObsoletePolicy(BindOptions.ObsoletePolicy.PRESERVE);
         }
-        SmartMerge.mergeInto(target, candObj, schema(), mergeOptions);
+        SmartMerge.mergeInto(target, candObj, schema(), mergeOptions, config.getCommentTree(), basePath,
+                codec.commentFidelity() == CommentFidelity.LOSSLESS, config.pathSeparator());
         seedCommentsFromAnnotations(pojo.getClass(), basePath);
     }
 
