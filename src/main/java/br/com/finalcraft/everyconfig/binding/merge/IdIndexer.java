@@ -71,7 +71,7 @@ public final class IdIndexer {
     }
 
     /** The key the mapper actually emits the {@code @Id} field under, so the body strip matches it exactly. */
-    private static String resolvedIdKey(final Class<?> type, final java.lang.reflect.Field idField,
+    private static String resolvedIdKey(final Class<?> type, final Field idField,
                                         final ObjectMapper mapper) {
         final BeanDescription desc = mapper.getSerializationConfig().introspect(mapper.constructType(type));
         for (final BeanPropertyDefinition p : desc.findProperties()) {

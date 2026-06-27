@@ -328,7 +328,7 @@ public class Config implements AutoCloseable {
 
     public List<String> getStringList(final String path) {
         final List<String> l = coercion.asStringList(resolve(path));
-        return l != null ? l : new java.util.ArrayList<String>();
+        return l != null ? l : new ArrayList<String>();
     }
 
     public List<String> getStringList(final String path, final List<String> def) {
