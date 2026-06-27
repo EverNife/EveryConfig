@@ -4,6 +4,7 @@ import br.com.finalcraft.everyconfig.io.AtomicFileBackend;
 import br.com.finalcraft.everyconfig.io.Backend;
 import br.com.finalcraft.everyconfig.io.ConfigExecutor;
 import br.com.finalcraft.everyconfig.binding.BindOptions;
+import br.com.finalcraft.everyconfig.binding.BindResult;
 import br.com.finalcraft.everyconfig.binding.EntityBinder;
 import br.com.finalcraft.everyconfig.binding.merge.IdIndexer;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
@@ -572,6 +573,14 @@ public class Config implements AutoCloseable {
         return bind(type, codec).bind();
     }
 
+    /**
+     * As {@link #loadAs}, but returns the value together with the {@link LoadIssue}s collected for the bind
+     * — the issues a bare {@link #loadAs} discards (it drops the binder).
+     */
+    public <T> BindResult<T> loadAsResult(final Class<T> type, final Codec codec) {
+        return bind(type, codec).bindResult();
+    }
+
     /** Merge a POJO into this config's tree (the in-memory write side; persistence is the backend's job). */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public void mergeFrom(final Object pojo, final Codec codec) {
@@ -588,14 +597,25 @@ public class Config implements AutoCloseable {
 
     /** Read an {@code @Id}-indexed section at {@code path} back into a list, restoring each id from its key. */
     public <T> List<T> readIdCollection(final String path, final Class<T> elementType, final Codec codec) {
+        return readIdCollectionResult(path, elementType, codec).value();
+    }
+
+    /**
+     * As {@link #readIdCollection}, but returns the list together with the {@link LoadIssue}s collected for
+     * this read (e.g. a body id disagreeing with its key), sourced from the local list so a later read does
+     * not race the result.
+     */
+    public <T> BindResult<List<T>> readIdCollectionResult(final String path, final Class<T> elementType,
+                                                          final Codec codec) {
         final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
         final List<LoadIssue> issues = new ArrayList<>();
         final List<T> out = IdIndexer.fromIndexed(getNode(path), elementType, mapper, issues);
         this.lastIdCollectionIssues = Collections.unmodifiableList(issues);
-        return out;
+        return new BindResult<>(out, issues);
     }
 
-    /** Issues recorded by the most recent {@link #readIdCollection} (e.g. a body id disagreeing with its key). */
+    /** Issues recorded by the most recent {@link #readIdCollection} (e.g. a body id disagreeing with its
+     *  key); {@link #readIdCollectionResult} returns the same issues alongside the list. */
     public List<LoadIssue> lastIdCollectionIssues() {
         return lastIdCollectionIssues;
     }
