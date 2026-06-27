@@ -584,6 +584,7 @@ public class Config implements AutoCloseable {
     public void mergeFrom(final Object pojo, final Codec codec) {
         final EntityBinder binder = bind(pojo.getClass(), codec);
         binder.writeEntity(pojo);
+        dirty = true; // the binder mutated the tree/comments directly, so flag a pending save
     }
 
     /** Store a collection of {@code @Id}-bearing entities at {@code path} as a section keyed by their id. */
