@@ -6,6 +6,7 @@ import br.com.finalcraft.everyconfig.annotation.Key;
 import br.com.finalcraft.everyconfig.binding.merge.SmartMerge;
 import br.com.finalcraft.everyconfig.binding.schema.Schema;
 import br.com.finalcraft.everyconfig.binding.schema.SchemaCache;
+import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.codec.jackson.JsonCodec;
 import br.com.finalcraft.everyconfig.codec.jackson.YamlCodec;
 import br.com.finalcraft.everyconfig.config.Config;
@@ -122,7 +123,8 @@ class EntityBinderWriteTest {
         final Schema schema = cache.of(json.objectMapper().constructType(Dtos.PolymorphicPojo.class));
 
         SmartMerge.mergeInto(canonical, candidate, schema,
-                BindOptions.defaults().withObsoletePolicy(BindOptions.ObsoletePolicy.REMOVE));
+                BindOptions.defaults().withObsoletePolicy(BindOptions.ObsoletePolicy.REMOVE),
+                new CommentTree(), "", false, '.');
 
         assertTrue(canonical.get("shape").has("type"), "type discriminator must survive REMOVE pruning");
         assertEquals("circle", canonical.get("shape").get("type").asText());

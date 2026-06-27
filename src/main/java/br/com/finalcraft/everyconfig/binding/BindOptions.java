@@ -19,7 +19,13 @@ public final class BindOptions {
         /** Keep it untouched (the safe default; the tree always wins). */
         PRESERVE,
         /** Strip it from the tree during the merge (opt-in; destroys data the schema no longer knows). */
-        REMOVE
+        REMOVE,
+        /**
+         * Keep the key (its data survives, like {@link #PRESERVE}) but stamp an authoritative deprecation
+         * block comment on it, overwriting any stale comment it carried. LOSSLESS codecs only; on a codec
+         * that cannot round-trip a comment losslessly it behaves as {@link #PRESERVE} (key kept, no marker).
+         */
+        COMMENT_OUT
     }
 
     private final Coercion coercion;
