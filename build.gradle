@@ -45,12 +45,34 @@ tasks.withType(JavaCompile).configureEach {
     options.compilerArgs.add('-parameters') // keep parameter names on the compiled jar
 }
 
-// Production code: Java 17 source level (Jabel lifts javac's source check) emitting Java 8 bytecode.
-configure([tasks.compileJava]) {
+// A Java 17 toolchain runs Gradle's compile/test for this project regardless of the launching JDK, so
+// the build is reproducible no matter which JDK starts it.
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+// Production code: Java 17 source syntax (Jabel lifts javac's source check) emitting Java 8 bytecode.
+// Pinned to a Java 17 compiler because Jabel rides javac internals that changed after JDK 17.
+compileJava {
     sourceCompatibility = 17 // IDE hint only; options.release governs the actual compile
+    options.release = 8
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+// Tests are plain Java compiled to the same Java 8 floor, so the suite can also run on a Java 8 runtime.
+compileTestJava {
     options.release = 8
 }
 
+// The suite runs on Java 17 by default; pass -PtestJdk=8|11|17|21|25 to run it on another runtime.
+def testJdkVersion = (project.findProperty('testJdk') ?: '17').toString().toInteger()
 test {
     useJUnitPlatform()
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(testJdkVersion)
+    }
 }
