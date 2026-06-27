@@ -17,7 +17,7 @@ replacing it.
 |---|---|
 | `config`, `config.section` | `Config` / `ConfigSection` — the handle, the dynamic path API, and the file lifecycle |
 | `core.tree`, `core.coerce`, `core.comment` | path utilities, value coercion, the comment overlay |
-| `codec`, `codec.jackson` | the `Codec` SPI + the JSON and YAML codecs (one shared `ObjectMapper` per codec) |
+| `codec`, `codec.jackson` | the `Codec` SPI + the JSON / YAML / TOML / JSONC codecs (one shared `ObjectMapper` per codec) |
 | `backend` | atomic file I/O, `.bak` rescue, reload, the poll watcher |
 | `binding`, `binding.introspect`, `annotation` | typed entity binding, `@Key`/`@Comment`/`@Section`/`@Id`/`@PostInject`, smart merge |
 
