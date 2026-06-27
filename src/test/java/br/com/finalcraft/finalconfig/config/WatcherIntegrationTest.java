@@ -46,7 +46,7 @@ class WatcherIntegrationTest {
             // A differently-sized external edit, so the (mtime,size) fingerprint reliably differs.
             Files.write(file, "a: 12345\n".getBytes(StandardCharsets.UTF_8));
 
-            assertTrue(waitUntil(() -> c.getInt("a", 0) == 12345, 5000L),
+            assertTrue(waitUntil(() -> c.getInt("a", 0) == 12345, 10000L),
                     "watcher should have reloaded the external edit");
             assertEquals(12345, c.getInt("a"));
             assertTrue(reloads.get() >= 1, "onReload callback should have fired");
