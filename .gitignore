@@ -15,3 +15,6 @@ Thumbs.db
 
 # Planning / design docs — local working material, not shipped
 /specs/
+
+# The wiki is its own git repo (the GitHub *.wiki.git), kept here for editing but not tracked by main
+/wiki/
