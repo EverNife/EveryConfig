@@ -34,10 +34,13 @@ public final class FCMapperProfiles {
     }
 
     /**
-     * Frozen read contract every profile builds on: java.time support, optional Optional support,
-     * tolerance of unknown properties (so unknown keys survive into the tree), and canonical map-entry
-     * ordering for deterministic, diff-friendly output. Because the read contract reads both epoch and
-     * ISO-8601 dates, any profile can read what any other profile wrote.
+     * Frozen read contract every profile builds on: java.time support, optional Optional support, and
+     * tolerance of unknown properties (so unknown keys survive into the tree). Because the contract reads
+     * both epoch and ISO-8601 dates, any profile can read what any other profile wrote.
+     *
+     * <p>Map-entry ordering is deliberately left at Jackson's default (insertion order, not alphabetical):
+     * key order is owned by the tree and the comment reconciler, so the mapper must not re-sort entries
+     * underneath it. A {@code Map} field therefore round-trips in its insertion order.
      */
     public static <M extends ObjectMapper> M baseReadContract(final M mapper) {
         mapper.registerModule(new JavaTimeModule());
@@ -45,7 +48,6 @@ public final class FCMapperProfiles {
             mapper.registerModule(JDK8_MODULE);
         }
         mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-        mapper.enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
         return mapper;
     }
 

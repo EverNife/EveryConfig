@@ -43,8 +43,9 @@ class FCMapperProfilesTest {
     }
 
     @Test
-    void baseReadContractEnablesOrderedMapEntries() {
+    void baseReadContractLeavesMapOrderingToTheTree() {
         final ObjectMapper mapper = FCMapperProfiles.baseReadContract(JsonMapper.builder().build());
-        assertTrue(mapper.isEnabled(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS));
+        // Key order is owned by the tree/reconciler, so the mapper must not re-sort map entries.
+        assertFalse(mapper.isEnabled(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS));
     }
 }
