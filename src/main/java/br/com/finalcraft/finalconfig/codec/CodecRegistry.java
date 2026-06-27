@@ -1,6 +1,8 @@
 package br.com.finalcraft.finalconfig.codec;
 
 import br.com.finalcraft.finalconfig.codec.jackson.JsonCodec;
+import br.com.finalcraft.finalconfig.codec.jackson.JsoncCodec;
+import br.com.finalcraft.finalconfig.codec.jackson.TomlCodec;
 import br.com.finalcraft.finalconfig.codec.jackson.YamlCodec;
 
 import java.util.LinkedHashMap;
@@ -12,18 +14,20 @@ import java.util.Map;
  * YAML document and a JSON document overlap, so guessing is ambiguous by construction. An unknown
  * extension raises a {@link CodecException} rather than defaulting to a format.
  *
- * <p>The built-in defaults register JSON and YAML. Registering a codec maps each of its declared
- * extensions (lowercased) to it; the last registration for an extension wins.
+ * <p>The built-in defaults register JSON, YAML, TOML and JSONC. Registering a codec maps each of its
+ * declared extensions (lowercased) to it; the last registration for an extension wins.
  */
 public final class CodecRegistry {
 
     private final Map<String, Codec> byExtension = new LinkedHashMap<>();
 
-    /** A registry pre-loaded with the built-in JSON and YAML codecs (default instances). */
+    /** A registry pre-loaded with the built-in JSON, YAML, TOML and JSONC codecs (default instances). */
     public static CodecRegistry defaults() {
         final CodecRegistry registry = new CodecRegistry();
         registry.register(new JsonCodec());
         registry.register(new YamlCodec());
+        registry.register(new TomlCodec());
+        registry.register(new JsoncCodec());
         return registry;
     }
 
