@@ -3,9 +3,13 @@ package br.com.finalcraft.everyconfig.binding;
 import br.com.finalcraft.everyconfig.annotation.Comment;
 import br.com.finalcraft.everyconfig.annotation.CommentMode;
 import br.com.finalcraft.everyconfig.annotation.Key;
+import br.com.finalcraft.everyconfig.binding.merge.SmartMerge;
+import br.com.finalcraft.everyconfig.binding.schema.Schema;
+import br.com.finalcraft.everyconfig.binding.schema.SchemaCache;
 import br.com.finalcraft.everyconfig.codec.jackson.JsonCodec;
 import br.com.finalcraft.everyconfig.codec.jackson.YamlCodec;
 import br.com.finalcraft.everyconfig.config.Config;
+import br.com.finalcraft.everyconfig.config.data.Dtos;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
@@ -103,6 +107,25 @@ class EntityBinderWriteTest {
                 .writeEntity(new Db());
         assertFalse(remove.contains("obsoleteKey")); // REMOVE strips the undeclared key
         assertEquals(10, remove.getInt("maxPool"));   // declared key kept
+    }
+
+    @Test
+    void removePolicyKeepsPolymorphicDiscriminator() {
+        // The merge seam: a candidate whose polymorphic node omits the type discriminator must not let
+        // REMOVE prune the discriminator the file already holds — a node missing its type tag fails to
+        // deserialize on the next read.
+        final ObjectNode canonical = (ObjectNode) json.readTree(
+                "{\"shape\":{\"type\":\"circle\",\"radius\":2.5},\"label\":\"shapes\"}");
+        final ObjectNode candidate = (ObjectNode) json.readTree(
+                "{\"shape\":{\"radius\":2.5},\"label\":\"shapes\"}");
+        final SchemaCache cache = new SchemaCache(json.objectMapper());
+        final Schema schema = cache.of(json.objectMapper().constructType(Dtos.PolymorphicPojo.class));
+
+        SmartMerge.mergeInto(canonical, candidate, schema,
+                BindOptions.defaults().withObsoletePolicy(BindOptions.ObsoletePolicy.REMOVE));
+
+        assertTrue(canonical.get("shape").has("type"), "type discriminator must survive REMOVE pruning");
+        assertEquals("circle", canonical.get("shape").get("type").asText());
     }
 
     @Test
