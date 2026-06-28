@@ -78,7 +78,7 @@ class EntityBinderReadTest {
     @Test
     void lenientRecordsIssueAndDoesNotThrow() {
         final EntityBinder<Cfg> binder = configFrom("{\"port\":\"NaN\",\"name\":\"x\"}").bind(Cfg.class, codec);
-        final Cfg cfg = binder.bind();
+        final Cfg cfg = binder.read("");
         assertFalse(binder.lastLoadIssues().isEmpty()); // the bad port was recorded
         assertEquals(25565, cfg.port);                  // the bad value was skipped: the default is kept
         assertEquals("x", cfg.name);                    // the rest still bound
@@ -88,7 +88,7 @@ class EntityBinderReadTest {
     void strictThrowsOnBadValue() {
         final EntityBinder<Cfg> binder = configFrom("{\"port\":\"NaN\"}")
                 .bind(Cfg.class, codec, BindOptions.defaults().withCoercion(BindOptions.Coercion.STRICT));
-        assertThrows(BindException.class, binder::bind);
+        assertThrows(BindException.class, () -> binder.read(""));
     }
 
     @Test
@@ -104,7 +104,7 @@ class EntityBinderReadTest {
         final EntityBinder<Nested> binder = configFrom(
                 "{\"label\":\"ok\",\"inner\":{\"url\":\"good\",\"poolSize\":\"NaN\"}}")
                 .bind(Nested.class, codec);
-        final Nested n = binder.bind();
+        final Nested n = binder.read("");
         assertEquals("ok", n.label);
         assertEquals("good", n.inner.url);       // the good sibling still bound
         assertEquals(7, n.inner.poolSize);       // the bad leaf kept its default
@@ -116,16 +116,16 @@ class EntityBinderReadTest {
     void lenientIsolatesBadListElementByIndexedKey() {
         final EntityBinder<WithList> binder = configFrom("{\"weights\":[1,\"x\",3]}")
                 .bind(WithList.class, codec);
-        final WithList w = binder.bind();
+        final WithList w = binder.read("");
         assertEquals(Integer.valueOf(1), w.weights.get(0)); // good elements survive at their indices
         assertEquals(Integer.valueOf(3), w.weights.get(2));
         assertEquals("weights[1]", binder.lastLoadIssues().get(0).key());
     }
 
     @Test
-    void bindResultCarriesValueAndIssues() {
+    void readResultCarriesValueAndIssues() {
         final EntityBinder<Cfg> binder = configFrom("{\"port\":\"NaN\",\"name\":\"x\"}").bind(Cfg.class, codec);
-        final BindResult<Cfg> r = binder.bindResult();
+        final BindResult<Cfg> r = binder.readResult("");
         assertEquals(25565, r.value().port);                 // bad value skipped, default kept
         assertEquals("x", r.value().name);
         assertTrue(r.hasIssues());
@@ -141,8 +141,8 @@ class EntityBinderReadTest {
     }
 
     @Test
-    void bindResultIsCleanWhenNoIssues() {
-        final BindResult<Cfg> r = configFrom("{\"port\":2}").bind(Cfg.class, codec).bindResult();
+    void readResultIsCleanWhenNoIssues() {
+        final BindResult<Cfg> r = configFrom("{\"port\":2}").bind(Cfg.class, codec).readResult("");
         assertEquals(2, r.value().port);
         assertFalse(r.hasIssues());
         assertTrue(r.issues().isEmpty());
