@@ -6,7 +6,6 @@ import br.com.finalcraft.everyconfig.annotation.PreLoad;
 import br.com.finalcraft.everyconfig.annotation.PreSave;
 import br.com.finalcraft.everyconfig.codec.jackson.JsonCodec;
 import br.com.finalcraft.everyconfig.config.Config;
-import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
@@ -72,23 +71,23 @@ class LifecycleHooksTest {
         transient List<String> calls = new ArrayList<String>();
 
         @Override
-        public void preLoad(final ConfigSection section) {
-            calls.add("preLoad@" + section.getPath());
+        public void preLoad(final ConfigContext context) {
+            calls.add("preLoad@" + context.section().getPath());
         }
 
         @Override
-        public void postLoad(final ConfigSection section) {
-            calls.add("postLoad@" + section.getPath());
+        public void postLoad(final ConfigContext context) {
+            calls.add("postLoad@" + context.section().getPath());
         }
 
         @Override
-        public void preSave(final ConfigSection section) {
-            calls.add("preSave@" + section.getPath());
+        public void preSave(final ConfigContext context) {
+            calls.add("preSave@" + context.section().getPath());
         }
 
         @Override
-        public void postSave(final ConfigSection section) {
-            calls.add("postSave@" + section.getPath());
+        public void postSave(final ConfigContext context) {
+            calls.add("postSave@" + context.section().getPath());
         }
     }
 
