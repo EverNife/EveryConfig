@@ -29,8 +29,8 @@ import java.util.Set;
  * before its sub-tables, as TOML requires), key order and comment lines — is rendered by this codec's
  * own emitter; the mapper never sees the whole tree.
  *
- * <p>TOML has no null type, so a {@code null} value is omitted on write (see {@code supportsNull} on the
- * config-contract tests). The comment + key-order overlay is recovered by a TEXT pass
+ * <p>TOML has no null type, so a {@code null} value is omitted on write. The comment + key-order overlay
+ * is recovered by a TEXT pass
  * ({@link #readComments}); comment text is stored WITHOUT the {@code #} prefix and re-added when emitting.
  */
 public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {

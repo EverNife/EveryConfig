@@ -12,8 +12,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-/** @Section places a flat field under a nested path on write and restores it to the field on read,
- *  the way the old library's @Key(prefix=...) did. */
+/** @Section places a flat field under a nested path on write and restores it to the field on read. */
 class SectionPlacementTest {
 
     static class Conf {

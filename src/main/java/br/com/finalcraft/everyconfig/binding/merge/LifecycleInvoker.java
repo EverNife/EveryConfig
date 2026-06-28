@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Fires an entity's lifecycle hooks for one bind phase. It runs the methods annotated with that phase's
  * annotation (walking the class hierarchy, de-duped by name so an overridden method runs once; each takes
- * no parameters or a single {@code List<LoadIssue>}), then — if the entity implements
+ * no parameters or a single {@code ConfigContext}), then — if the entity implements
  * {@link ConfigLifecycle} — the matching interface callback with the bound {@link ConfigSection}.
  */
 public final class LifecycleInvoker {

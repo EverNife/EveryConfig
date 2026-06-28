@@ -31,7 +31,7 @@ public class ConfigSection {
         return path;
     }
 
-    /** The leaf key of this section's path (old {@code getSectionKey}). */
+    /** The leaf key of this section's path (its last segment). */
     public String getSectionKey() {
         final char sep = config.pathSeparator();
         final int i = path.lastIndexOf(sep);
@@ -101,7 +101,7 @@ public class ConfigSection {
         return config.removeValue(concatSubPath(sub));
     }
 
-    /** Old alias: clears this whole section. */
+    /** Removes this whole section (its subtree) from the config. */
     public boolean clear() {
         return config.removeValue(path);
     }

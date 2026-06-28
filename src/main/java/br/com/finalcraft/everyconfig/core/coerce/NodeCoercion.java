@@ -135,6 +135,7 @@ public final class NodeCoercion {
         return n.asText(); // numeric / boolean canonical
     }
 
+    /** Tolerant of an int stored as a quoted string (e.g. {@code "25565"} or {@code "1.0"}). */
     public Integer asInt(final JsonNode n) {
         if (isAbsentish(n)) {
             return null;
