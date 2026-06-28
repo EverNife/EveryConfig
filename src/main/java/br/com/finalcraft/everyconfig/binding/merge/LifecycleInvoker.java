@@ -13,9 +13,13 @@ import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Fires an entity's lifecycle hooks for one bind phase. It runs the methods annotated with that phase's
@@ -39,6 +43,10 @@ public final class LifecycleInvoker {
         }
     }
 
+    /** The annotated hook methods of each class, resolved once on first use and reused thereafter — the
+     *  method set depends only on the class, so re-walking the hierarchy on every bind is wasted work. */
+    private static final ConcurrentHashMap<Class<?>, Map<Phase, List<Method>>> HOOKS = new ConcurrentHashMap<>();
+
     private LifecycleInvoker() {
     }
 
@@ -48,19 +56,41 @@ public final class LifecycleInvoker {
             return;
         }
         final ConfigContext context = new ConfigContext(section, issues);
-        final Set<String> invoked = new HashSet<>();
-        Class<?> c = pojo.getClass();
-        while (c != null && c != Object.class) {
-            for (final Method m : c.getDeclaredMethods()) {
-                if (m.isAnnotationPresent(phase.annotation) && invoked.add(m.getName())) {
-                    invokeOne(pojo, m, phase, context);
-                }
-            }
-            c = c.getSuperclass();
+        for (final Method m : hooksOf(pojo.getClass()).get(phase)) {
+            invokeOne(pojo, m, phase, context);
         }
         if (pojo instanceof ConfigLifecycle) {
             invokeInterface((ConfigLifecycle) pojo, phase, context);
         }
+    }
+
+    private static Map<Phase, List<Method>> hooksOf(final Class<?> type) {
+        return HOOKS.computeIfAbsent(type, LifecycleInvoker::resolveHooks);
+    }
+
+    /**
+     * Collect the hook methods per phase for {@code type}: walk the hierarchy subclass-first and, within
+     * each phase, keep the first method seen per name so an overridden hook runs once (the most-derived
+     * override). Signatures are validated at invoke time, as before, so a bad {@code @PreSave} surfaces
+     * only when a save fires — not when this map is built.
+     */
+    private static Map<Phase, List<Method>> resolveHooks(final Class<?> type) {
+        final Map<Phase, List<Method>> byPhase = new EnumMap<>(Phase.class);
+        for (final Phase phase : Phase.values()) {
+            final List<Method> methods = new ArrayList<>();
+            final Set<String> seenNames = new HashSet<>();
+            Class<?> c = type;
+            while (c != null && c != Object.class) {
+                for (final Method m : c.getDeclaredMethods()) {
+                    if (m.isAnnotationPresent(phase.annotation) && seenNames.add(m.getName())) {
+                        methods.add(m);
+                    }
+                }
+                c = c.getSuperclass();
+            }
+            byPhase.put(phase, methods);
+        }
+        return byPhase;
     }
 
     private static void invokeInterface(final ConfigLifecycle entity, final Phase phase,
