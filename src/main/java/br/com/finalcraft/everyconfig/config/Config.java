@@ -213,18 +213,40 @@ public class Config implements AutoCloseable {
 
     // ==================== set / remove ====================
 
+    /**
+     * Stores {@code value} at {@code path} ({@code ""}/{@code null} = the root). A native value (scalar,
+     * {@code Map}, list, {@link JsonNode}, or a scalar-serializing type like UUID/java.time) is set as a
+     * raw <em>replace</em>. An arbitrary POJO (one that serializes to an object) is instead <em>merged</em>
+     * annotation-aware through the bound codec — {@code @Comment} seeded, {@code @Section} relocated, and
+     * unknown sibling keys preserved (the tree wins). A {@code null} value removes the path.
+     */
     public void setValue(final String path, final Object value) {
-        if (DPath.isRoot(path)) {
-            setRoot(value);
-            return;
-        }
+        final boolean root = DPath.isRoot(path);
         if (value == null) {
-            removeValue(path);
+            if (root) {
+                setRoot(null);
+            } else {
+                removeValue(path);
+            }
             return;
         }
         final JsonNode node = coercion.toNode(value);
         if (node == null || node.isMissingNode()) {
-            removeValue(path);
+            if (root) {
+                setRoot(null);
+            } else {
+                removeValue(path);
+            }
+            return;
+        }
+        // A genuine POJO (serializes to an object, and is not a Map/JsonNode) is merged annotation-aware;
+        // everything native takes the raw replace path below.
+        if (lifecycleCodec != null && node instanceof ObjectNode && isEntityValue(value)) {
+            mergeEntity(root ? "" : path, value);
+            return;
+        }
+        if (root) {
+            setRoot(value);
             return;
         }
         if (DPath.hasBracket(path)) {
@@ -238,6 +260,12 @@ public class Config implements AutoCloseable {
         }
         pk.parent.set(pk.key, node);
         dirty = true;
+    }
+
+    /** True when {@code value} is a genuine entity to merge — not a {@code Map} or {@link JsonNode}, which
+     *  also serialize to an object but must be set raw (no schema to merge against). */
+    private static boolean isEntityValue(final Object value) {
+        return !(value instanceof JsonNode || value instanceof Map);
     }
 
     /**
@@ -815,11 +843,12 @@ public class Config implements AutoCloseable {
         return lifecycleCodec;
     }
 
-    /** Merge a POJO into this config's tree (the in-memory write side; persistence is the backStore's job). */
+    /** Merge a POJO into the tree at {@code path} via the binder (annotation-aware), using the lifecycle
+     *  codec — the engine behind a POJO {@link #setValue(String, Object)}. */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    public void mergeFrom(final Object pojo, final Codec codec) {
-        final EntityBinder binder = bind(pojo.getClass(), codec);
-        binder.write("", pojo);
+    private void mergeEntity(final String path, final Object pojo) {
+        final EntityBinder binder = bind(pojo.getClass(), lifecycleCodec);
+        binder.write(path, pojo);
         dirty = true; // the binder mutated the tree/comments directly, so flag a pending save
     }
 

@@ -58,7 +58,7 @@ class BindingEndToEndTest {
         assertEquals(20, db.maxPool);
 
         db.maxPool = 25;
-        c.mergeFrom(db, yaml);
+        c.bind(DbConfig.class, yaml).write("", db);
 
         // Tree wins: the hand-added unknown key survives the binding save.
         assertTrue(c.contains("legacy-key"));

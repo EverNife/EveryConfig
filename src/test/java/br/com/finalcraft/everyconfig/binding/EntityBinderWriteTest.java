@@ -55,7 +55,7 @@ class EntityBinderWriteTest {
         final Config c = configFrom("{\"jdbc-url\":\"jdbc:user\",\"legacyKey\":\"keepme\"}");
         final Db db = new Db();
         db.url = "jdbc:user";
-        c.mergeFrom(db, json);
+        c.bind(Db.class, json).write("", db);
 
         assertTrue(c.contains("legacyKey"));                 // unknown key survives the merge
         assertEquals("keepme", c.getString("legacyKey"));
@@ -68,14 +68,14 @@ class EntityBinderWriteTest {
         final Config c = configFrom("{\"maxPool\":5}");
         final Db db = new Db();
         db.maxPool = 10;
-        c.mergeFrom(db, json);
+        c.bind(Db.class, json).write("", db);
         assertEquals(10, c.getInt("maxPool"));
     }
 
     @Test
     void commentSeededFromAnnotationOnFreshConfig() {
         final Config c = new Config();
-        c.mergeFrom(new Db(), yaml);
+        c.bind(Db.class, yaml).write("", new Db());
         assertEquals("the JDBC url", c.getComment("jdbc-url"));
         assertEquals(Arrays.asList("Connection settings"), c.getCommentTree().getHeader());
     }
@@ -84,7 +84,7 @@ class EntityBinderWriteTest {
     void overrideCommentReplacesAnExistingComment() {
         final Config c = new Config();
         c.setComment("jdbc-url", "OLD");
-        c.mergeFrom(new Db(), yaml); // url's @Comment defaults to OVERRIDE
+        c.bind(Db.class, yaml).write("", new Db()); // url's @Comment defaults to OVERRIDE
         assertEquals("the JDBC url", c.getComment("jdbc-url"));
     }
 
@@ -92,7 +92,7 @@ class EntityBinderWriteTest {
     void setIfAbsentCommentPreservesAnExistingComment() {
         final Config c = new Config();
         c.setComment("retries", "USER WROTE THIS");
-        c.mergeFrom(new Db(), yaml); // retries' @Comment is SET_IF_ABSENT
+        c.bind(Db.class, yaml).write("", new Db()); // retries' @Comment is SET_IF_ABSENT
         assertEquals("USER WROTE THIS", c.getComment("retries"));
     }
 
