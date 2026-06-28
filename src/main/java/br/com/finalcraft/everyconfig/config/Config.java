@@ -14,6 +14,7 @@ import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.CodecException;
 import br.com.finalcraft.everyconfig.codec.CodecRegistry;
 import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
+import br.com.finalcraft.everyconfig.codec.jackson.InMemoryCodec;
 import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.coerce.NodeCoercion;
@@ -30,6 +31,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
@@ -992,6 +994,50 @@ public class Config implements AutoCloseable {
         newDefaultValueToSave = false;
     }
 
+    // ==================== in-memory + codec selection ====================
+
+    /**
+     * An in-memory Config bound to {@link InMemoryCodec}: the full typed/POJO API works (setValue-merge,
+     * {@code getValue(path, type)}, {@code @Key}/{@code @Section}/{@code @Comment}, enum-by-name,
+     * {@code java.time}, {@code Optional}) but there is no file or text format, so it cannot be persisted —
+     * {@link #save()} throws. To persist, open a real file with {@link #open} instead. This differs from
+     * {@code new Config()}, which has no codec at all and accepts only native (scalar/{@code Map}/list/
+     * {@link JsonNode}) values.
+     */
+    public static Config inMemory() {
+        return inMemory(InMemoryCodec.INSTANCE);
+    }
+
+    /** As {@link #inMemory()}, with a caller-supplied codec (e.g. an {@link InMemoryCodec} over a custom
+     *  mapper); the codec supplies the binding mapper and there is no back-store. */
+    public static Config inMemory(final Codec codec) {
+        final Config cfg = new Config();
+        cfg.lifecycleCodec = codec;
+        cfg.bindCoercionTo(codec);
+        return cfg;
+    }
+
+    /**
+     * Switches the codec this Config binds and saves with, rebinding the POJO coercion to the new codec's
+     * mapper. Returns {@code this} for chaining. The back-store path (if any) is unchanged, so persisting a
+     * format that disagrees with the file name is the caller's responsibility; for a one-off, prefer
+     * {@link #save(Codec)}. Switching from a comment-bearing codec to one without comment fidelity (e.g.
+     * JSON) drops the comment overlay on the next save.
+     */
+    public Config changeCodec(final Codec codec) {
+        if (codec == null) {
+            throw new IllegalArgumentException("codec cannot be null");
+        }
+        lock.lock();
+        try {
+            this.lifecycleCodec = codec;
+            bindCoercionTo(codec);
+        } finally {
+            lock.unlock();
+        }
+        return this;
+    }
+
     // ==================== lifecycle (backStore-backed) ====================
 
     /**
@@ -1116,13 +1162,19 @@ public class Config implements AutoCloseable {
     }
 
     private byte[] encode() {
+        return encodeWith(lifecycleCodec, backStore.charset());
+    }
+
+    /** Encode the tree (with comments + key order) through {@code codec}, using {@code charset} for the
+     *  text→bytes step. The comment emitter is used only when the codec round-trips comments. */
+    private byte[] encodeWith(final Codec codec, final Charset charset) {
         final String text;
-        if (lifecycleCodec instanceof CommentAware && lifecycleCodec.commentFidelity() != CommentFidelity.NONE) {
-            text = ((CommentAware) lifecycleCodec).writeWithComments(root, comments, fileKeyOrder);
+        if (codec instanceof CommentAware && codec.commentFidelity() != CommentFidelity.NONE) {
+            text = ((CommentAware) codec).writeWithComments(root, comments, fileKeyOrder);
         } else {
-            text = lifecycleCodec.writeTreePlain(root);
+            text = codec.writeTreePlain(root);
         }
-        return text.getBytes(backStore.charset());
+        return text.getBytes(charset);
     }
 
     private void safeBackup() {
@@ -1139,6 +1191,30 @@ public class Config implements AutoCloseable {
         lock.lock();
         try {
             final BackStore.Fingerprint written = backStore.writeAtomic(encode());
+            loaded = written;
+            if (watcher != null) {
+                watcher.refreshSnapshot(written);
+            }
+            dirty = false;
+        } catch (final IOException e) {
+            throw new ConfigIOException("failed to save " + backStore.describe(), e);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * One-shot save in a DIFFERENT format: encodes the tree through {@code codec} (its comment fidelity and
+     * charset) and writes it atomically to the same file, without changing the codec this Config keeps. The
+     * file extension is not changed, so emitting a format the name does not imply is the caller's call — a
+     * later extension-inferred {@link #open} would pick the wrong codec. Requires a back-store (from
+     * {@link #open}).
+     */
+    public void save(final Codec codec) {
+        requireBackStore();
+        lock.lock();
+        try {
+            final BackStore.Fingerprint written = backStore.writeAtomic(encodeWith(codec, codec.charset()));
             loaded = written;
             if (watcher != null) {
                 watcher.refreshSnapshot(written);
