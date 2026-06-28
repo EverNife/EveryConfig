@@ -7,6 +7,7 @@ import br.com.finalcraft.everyconfig.annotation.Key;
 import br.com.finalcraft.everyconfig.annotation.KeyTransformCase;
 import br.com.finalcraft.everyconfig.annotation.PostLoad;
 import br.com.finalcraft.everyconfig.annotation.Section;
+import br.com.finalcraft.everyconfig.binding.ConfigContext;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.binding.LoadIssueAware;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
@@ -285,14 +286,14 @@ public final class Dtos {
         }
     }
 
-    /** {@code @PostLoad} receiving the {@code List<LoadIssue>}. */
+    /** {@code @PostLoad} reading the issues off the {@code ConfigContext}. */
     public static class PostLoadIssuesPojo {
         public int port = 1;
         public transient List<LoadIssue> seen;
 
         @PostLoad
-        void check(final List<LoadIssue> issues) {
-            seen = issues;
+        void check(final ConfigContext context) {
+            seen = context.issues();
         }
     }
 

@@ -5,6 +5,7 @@ import br.com.finalcraft.everyconfig.annotation.PostSave;
 import br.com.finalcraft.everyconfig.annotation.PreLoad;
 import br.com.finalcraft.everyconfig.annotation.PreSave;
 import br.com.finalcraft.everyconfig.binding.BindException;
+import br.com.finalcraft.everyconfig.binding.ConfigContext;
 import br.com.finalcraft.everyconfig.binding.ConfigLifecycle;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.config.section.ConfigSection;
@@ -46,35 +47,36 @@ public final class LifecycleInvoker {
         if (pojo == null) {
             return;
         }
+        final ConfigContext context = new ConfigContext(section, issues);
         final Set<String> invoked = new HashSet<>();
         Class<?> c = pojo.getClass();
         while (c != null && c != Object.class) {
             for (final Method m : c.getDeclaredMethods()) {
                 if (m.isAnnotationPresent(phase.annotation) && invoked.add(m.getName())) {
-                    invokeOne(pojo, m, phase, issues);
+                    invokeOne(pojo, m, phase, context);
                 }
             }
             c = c.getSuperclass();
         }
         if (pojo instanceof ConfigLifecycle) {
-            invokeInterface((ConfigLifecycle) pojo, phase, section);
+            invokeInterface((ConfigLifecycle) pojo, phase, context);
         }
     }
 
     private static void invokeInterface(final ConfigLifecycle entity, final Phase phase,
-                                        final ConfigSection section) {
+                                        final ConfigContext context) {
         switch (phase) {
             case PRE_LOAD:
-                entity.preLoad(section);
+                entity.preLoad(context);
                 break;
             case POST_LOAD:
-                entity.postLoad(section);
+                entity.postLoad(context);
                 break;
             case PRE_SAVE:
-                entity.preSave(section);
+                entity.preSave(context);
                 break;
             case POST_SAVE:
-                entity.postSave(section);
+                entity.postSave(context);
                 break;
             default:
                 break;
@@ -82,17 +84,17 @@ public final class LifecycleInvoker {
     }
 
     private static void invokeOne(final Object pojo, final Method m, final Phase phase,
-                                  final List<LoadIssue> issues) {
+                                  final ConfigContext context) {
         final Class<?>[] params = m.getParameterTypes();
         final String tag = "@" + phase.annotation.getSimpleName() + " '" + m.getName() + "'";
         try {
             m.setAccessible(true);
             if (params.length == 0) {
                 m.invoke(pojo);
-            } else if (params.length == 1 && params[0].isAssignableFrom(List.class)) {
-                m.invoke(pojo, issues);
+            } else if (params.length == 1 && params[0].isAssignableFrom(ConfigContext.class)) {
+                m.invoke(pojo, context);
             } else {
-                throw new BindException(tag + " must take no parameters or a single List<LoadIssue> parameter");
+                throw new BindException(tag + " must take no parameters or a single ConfigContext parameter");
             }
         } catch (final InvocationTargetException e) {
             final Throwable cause = e.getCause() != null ? e.getCause() : e;

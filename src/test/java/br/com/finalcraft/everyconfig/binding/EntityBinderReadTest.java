@@ -35,8 +35,8 @@ class EntityBinderReadTest {
         List<LoadIssue> seen;
 
         @PostLoad
-        void check(final List<LoadIssue> issues) {
-            seen = issues;
+        void check(final ConfigContext context) {
+            seen = context.issues();
         }
     }
 
