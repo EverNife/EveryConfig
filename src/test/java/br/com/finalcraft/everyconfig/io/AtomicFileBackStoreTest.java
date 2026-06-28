@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class AtomicFileBackendTest {
+class AtomicFileBackStoreTest {
 
     @TempDir
     Path dir;
@@ -31,32 +31,32 @@ class AtomicFileBackendTest {
 
     @Test
     void writeAtomicThenReadBack() throws IOException {
-        final AtomicFileBackend backend = new AtomicFileBackend(dir.resolve("a.yml"));
-        assertFalse(backend.exists());
-        assertNull(backend.readBytes());
+        final AtomicFileBackStore backStore = new AtomicFileBackStore(dir.resolve("a.yml"));
+        assertFalse(backStore.exists());
+        assertNull(backStore.readBytes());
 
-        final Backend.Fingerprint fp = backend.writeAtomic(bytes("hello: world\n"));
-        assertTrue(backend.exists());
-        assertArrayEquals(bytes("hello: world\n"), backend.readBytes());
+        final BackStore.Fingerprint fp = backStore.writeAtomic(bytes("hello: world\n"));
+        assertTrue(backStore.exists());
+        assertArrayEquals(bytes("hello: world\n"), backStore.readBytes());
         assertEquals(bytes("hello: world\n").length, fp.size);
     }
 
     @Test
     void writeCreatesMissingParentDirectories() throws IOException {
-        final AtomicFileBackend backend = new AtomicFileBackend(dir.resolve("nested/deep/b.yml"));
-        backend.writeAtomic(bytes("x: 1\n"));
-        assertTrue(backend.exists());
-        assertArrayEquals(bytes("x: 1\n"), backend.readBytes());
+        final AtomicFileBackStore backStore = new AtomicFileBackStore(dir.resolve("nested/deep/b.yml"));
+        backStore.writeAtomic(bytes("x: 1\n"));
+        assertTrue(backStore.exists());
+        assertArrayEquals(bytes("x: 1\n"), backStore.readBytes());
     }
 
     @Test
     void backupUnparseableCopiesAsideAndIsNoopWhenAbsent() throws IOException {
         final Path target = dir.resolve("c.yml");
-        final AtomicFileBackend backend = new AtomicFileBackend(target);
-        assertNull(backend.backupUnparseable()); // nothing to back up
+        final AtomicFileBackStore backStore = new AtomicFileBackStore(target);
+        assertNull(backStore.backupUnparseable()); // nothing to back up
 
-        backend.writeAtomic(bytes("corrupt: [\n"));
-        final String bak = backend.backupUnparseable();
+        backStore.writeAtomic(bytes("corrupt: [\n"));
+        final String bak = backStore.backupUnparseable();
         assertTrue(bak.endsWith(".bak"));
         assertArrayEquals(bytes("corrupt: [\n"), Files.readAllBytes(Paths.get(bak)));
     }
@@ -65,33 +65,33 @@ class AtomicFileBackendTest {
     void fsyncDurabilityWritesAndReadsBack() throws IOException {
         // FSYNC cannot be observed for its power-loss guarantee in a unit test; assert it is at least a
         // correct no-op for the visible round-trip (the bytes land and read back exactly).
-        final AtomicFileBackend backend =
-                new AtomicFileBackend(dir.resolve("fsync.yml"), Backend.Durability.FSYNC);
-        final Backend.Fingerprint fp = backend.writeAtomic(bytes("durable: true\n"));
-        assertTrue(backend.exists());
-        assertArrayEquals(bytes("durable: true\n"), backend.readBytes());
+        final AtomicFileBackStore backStore =
+                new AtomicFileBackStore(dir.resolve("fsync.yml"), BackStore.Durability.FSYNC);
+        final BackStore.Fingerprint fp = backStore.writeAtomic(bytes("durable: true\n"));
+        assertTrue(backStore.exists());
+        assertArrayEquals(bytes("durable: true\n"), backStore.readBytes());
         assertEquals(bytes("durable: true\n").length, fp.size);
 
         // Overwrite via FSYNC too, to exercise the replace-existing path under the forced mode.
-        backend.writeAtomic(bytes("durable: true\nmore: 1\n"));
-        assertArrayEquals(bytes("durable: true\nmore: 1\n"), backend.readBytes());
+        backStore.writeAtomic(bytes("durable: true\nmore: 1\n"));
+        assertArrayEquals(bytes("durable: true\nmore: 1\n"), backStore.readBytes());
     }
 
     @Test
     void defaultDurabilityIsOsCacheAndRoundTrips() throws IOException {
-        final AtomicFileBackend explicit =
-                new AtomicFileBackend(dir.resolve("oscache.yml"), Backend.Durability.OS_CACHE);
+        final AtomicFileBackStore explicit =
+                new AtomicFileBackStore(dir.resolve("oscache.yml"), BackStore.Durability.OS_CACHE);
         explicit.writeAtomic(bytes("k: v\n"));
         assertArrayEquals(bytes("k: v\n"), explicit.readBytes());
     }
 
     @Test
     void fingerprintReflectsContentChange() throws IOException {
-        final AtomicFileBackend backend = new AtomicFileBackend(dir.resolve("d.yml"));
-        backend.writeAtomic(bytes("a: 1\n"));
-        final Backend.Fingerprint first = backend.fingerprint();
-        backend.writeAtomic(bytes("a: 1\nb: 2\n"));
-        final Backend.Fingerprint second = backend.fingerprint();
+        final AtomicFileBackStore backStore = new AtomicFileBackStore(dir.resolve("d.yml"));
+        backStore.writeAtomic(bytes("a: 1\n"));
+        final BackStore.Fingerprint first = backStore.fingerprint();
+        backStore.writeAtomic(bytes("a: 1\nb: 2\n"));
+        final BackStore.Fingerprint second = backStore.fingerprint();
         assertFalse(first.equals(second));
     }
 
@@ -99,8 +99,8 @@ class AtomicFileBackendTest {
     void statOnlyFingerprintMatchesHashedOneOnMtimeAndSize() {
         // The cheap (mtime,size) fingerprint behind hasBeenModified must stay equal to a hashed fingerprint
         // with the same mtime/size, so adding a content hash does not change hasBeenModified semantics.
-        final Backend.Fingerprint stat = new Backend.Fingerprint(5L, 10L);
-        final Backend.Fingerprint hashed = new Backend.Fingerprint(5L, 10L, 999L);
+        final BackStore.Fingerprint stat = new BackStore.Fingerprint(5L, 10L);
+        final BackStore.Fingerprint hashed = new BackStore.Fingerprint(5L, 10L, 999L);
         assertEquals(stat, hashed);
         assertEquals(hashed, stat);
         assertEquals(stat.hashCode(), hashed.hashCode());
@@ -108,28 +108,28 @@ class AtomicFileBackendTest {
 
     @Test
     void contentHashDistinguishesSameMtimeAndSize() {
-        final Backend.Fingerprint a = new Backend.Fingerprint(5L, 10L, 111L);
-        final Backend.Fingerprint b = new Backend.Fingerprint(5L, 10L, 222L);
+        final BackStore.Fingerprint a = new BackStore.Fingerprint(5L, 10L, 111L);
+        final BackStore.Fingerprint b = new BackStore.Fingerprint(5L, 10L, 222L);
         assertNotEquals(a, b); // identical (mtime,size) but different content -> distinct when both hashed
     }
 
     @Test
     void writeAtomicFingerprintCarriesContentHash() throws IOException {
-        final AtomicFileBackend backend = new AtomicFileBackend(dir.resolve("hashed.yml"));
-        final Backend.Fingerprint fp = backend.writeAtomic(bytes("x: 1\n"));
-        assertNotEquals(Backend.Fingerprint.NO_HASH, fp.hash);
+        final AtomicFileBackStore backStore = new AtomicFileBackStore(dir.resolve("hashed.yml"));
+        final BackStore.Fingerprint fp = backStore.writeAtomic(bytes("x: 1\n"));
+        assertNotEquals(BackStore.Fingerprint.NO_HASH, fp.hash);
     }
 
     @Test
     void contentHashWatcherFiresOnSameSizeSameMtimeEdit() throws Exception {
         final Path file = dir.resolve("watched.yml");
-        final AtomicFileBackend backend = new AtomicFileBackend(file);
-        backend.writeAtomic(bytes("value: 1\n"));
+        final AtomicFileBackStore backStore = new AtomicFileBackStore(file);
+        backStore.writeAtomic(bytes("value: 1\n"));
         final FileTime original = Files.getLastModifiedTime(file);
 
         final CountDownLatch fired = new CountDownLatch(1);
-        final Backend.Watcher watcher =
-                backend.watch(Duration.ofMillis(20), fired::countDown, true);
+        final BackStore.Watcher watcher =
+                backStore.watch(Duration.ofMillis(20), fired::countDown, true);
         watcher.start();
         try {
             // Same byte length, different content, and the SAME mtime (a coarse-tick collision): a stat-only

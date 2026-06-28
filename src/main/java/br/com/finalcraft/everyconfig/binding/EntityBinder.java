@@ -188,7 +188,7 @@ public final class EntityBinder<T> {
      * Project {@code pojo} to a tree and merge it into the canonical tree at the root. Unknown file keys,
      * the comment overlay, and key order all survive; the POJO is the source of truth only for the keys
      * it declares. Comments from {@code @Comment} are seeded (never written over a user edit). This
-     * mutates the in-memory tree only; persisting it is the backend's job.
+     * mutates the in-memory tree only; persisting it is the back-store's job.
      */
     public void writeEntity(final T pojo) {
         mergeAndSeed(pojo, config.getRoot(), "");

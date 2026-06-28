@@ -6,7 +6,7 @@ package br.com.finalcraft.everyconfig.config;
  */
 public enum LoadStatus {
 
-    /** Freshly constructed, not yet loaded from a backend. */
+    /** Freshly constructed, not yet loaded from a back-store. */
     NEVER_LOADED,
     /** Clean parse; the tree is the file. */
     OK,
