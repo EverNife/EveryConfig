@@ -1,5 +1,5 @@
 package br.com.finalcraft.everyconfig.binding;
-import br.com.finalcraft.everyconfig.binding.merge.PostInjectInvoker;
+import br.com.finalcraft.everyconfig.binding.merge.LifecycleInvoker;
 import br.com.finalcraft.everyconfig.binding.merge.SmartMerge;
 import br.com.finalcraft.everyconfig.binding.schema.BindingNames;
 import br.com.finalcraft.everyconfig.binding.schema.Schema;
@@ -145,7 +145,7 @@ public final class EntityBinder<T> {
 
     /**
      * Bind the subtree at {@code path} ({@code ""} / {@code null} = the whole tree) to a FRESH instance.
-     * Unknown keys are ignored and missing keys keep the constructed defaults; {@code @PostInject} runs.
+     * Unknown keys are ignored and missing keys keep the constructed defaults; {@code @PostLoad} runs.
      */
     public T read(final String path) {
         return doRead(path, constructDefault());
@@ -204,7 +204,11 @@ public final class EntityBinder<T> {
         if (node == null) {
             node = mapper.getNodeFactory().objectNode();
         }
-        return doBind(base, node);
+        final ConfigSection section = config.getConfigSection(path);
+        LifecycleInvoker.fire(base, LifecycleInvoker.Phase.PRE_LOAD, section, Collections.<LoadIssue>emptyList());
+        final T result = doBind(base, node);
+        LifecycleInvoker.fire(result, LifecycleInvoker.Phase.POST_LOAD, section, lastIssues);
+        return result;
     }
 
     // ---- WRITE: POJO -> tree (merge, never replace; "" / null = the root) ----
@@ -216,6 +220,8 @@ public final class EntityBinder<T> {
      * {@code @Comment}s are seeded (never written over a user edit). Mutates the in-memory tree only.
      */
     public void write(final String path, final T pojo) {
+        final ConfigSection section = config.getConfigSection(path == null ? "" : path);
+        LifecycleInvoker.fire(pojo, LifecycleInvoker.Phase.PRE_SAVE, section, Collections.<LoadIssue>emptyList());
         final JsonNode existing = config.getNode(path);
         final ObjectNode target;
         if (existing instanceof ObjectNode) {
@@ -225,6 +231,7 @@ public final class EntityBinder<T> {
             config.setValue(path, target);
         }
         mergeAndSeed(pojo, target, path == null ? "" : path);
+        LifecycleInvoker.fire(pojo, LifecycleInvoker.Phase.POST_SAVE, section, Collections.<LoadIssue>emptyList());
     }
 
     /** As {@link #write(String, Object)}, scoped to a {@link ConfigSection}'s path. */
@@ -370,7 +377,6 @@ public final class EntityBinder<T> {
         if (result instanceof LoadIssueAware) {
             ((LoadIssueAware) result).setLoadIssues(lastIssues);
         }
-        PostInjectInvoker.invoke(result, lastIssues);
         return result;
     }
 

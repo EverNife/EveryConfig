@@ -3,7 +3,7 @@ package br.com.finalcraft.everyconfig.binding;
 /**
  * One value that could not be bound to its target type during a lenient load. Recording the issue lets a
  * single bad value degrade gracefully (the field keeps a default) instead of failing the whole load; a
- * {@code @PostInject} validator can inspect the collected issues and decide whether to reject the config.
+ * {@code @PostLoad} validator can inspect the collected issues and decide whether to reject the config.
  */
 public final class LoadIssue {
 

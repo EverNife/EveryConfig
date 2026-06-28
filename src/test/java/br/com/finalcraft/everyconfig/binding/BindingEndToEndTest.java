@@ -4,7 +4,7 @@ import br.com.finalcraft.everyconfig.annotation.Comment;
 import br.com.finalcraft.everyconfig.annotation.CommentMode;
 import br.com.finalcraft.everyconfig.annotation.Key;
 import br.com.finalcraft.everyconfig.annotation.KeyTransformCase;
-import br.com.finalcraft.everyconfig.annotation.PostInject;
+import br.com.finalcraft.everyconfig.annotation.PostLoad;
 import br.com.finalcraft.everyconfig.codec.CommentAware.CommentLoad;
 import br.com.finalcraft.everyconfig.codec.jackson.YamlCodec;
 import br.com.finalcraft.everyconfig.config.Config;
@@ -31,7 +31,7 @@ class BindingEndToEndTest {
         @Comment("pool timeout in seconds")
         public int timeout = 30; // a NEW key, absent from the on-disk file
 
-        @PostInject
+        @PostLoad
         void validate() {
             if (maxPool < 1) {
                 throw new IllegalStateException("max-pool must be >= 1");

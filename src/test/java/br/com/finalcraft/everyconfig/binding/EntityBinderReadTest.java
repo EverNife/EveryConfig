@@ -1,6 +1,6 @@
 package br.com.finalcraft.everyconfig.binding;
 
-import br.com.finalcraft.everyconfig.annotation.PostInject;
+import br.com.finalcraft.everyconfig.annotation.PostLoad;
 import br.com.finalcraft.everyconfig.codec.jackson.JsonCodec;
 import br.com.finalcraft.everyconfig.config.Config;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** READ path: missing keys keep defaults, unknown keys are ignored, lenient tolerates bad values while
- *  strict throws, and @PostInject runs after binding. */
+ *  strict throws, and @PostLoad runs after binding. */
 class EntityBinderReadTest {
 
     static class Cfg {
@@ -24,7 +24,7 @@ class EntityBinderReadTest {
         public boolean enabled = true;
         boolean postRan = false;
 
-        @PostInject
+        @PostLoad
         void init() {
             postRan = true;
         }
@@ -34,7 +34,7 @@ class EntityBinderReadTest {
         public int port = 1;
         List<LoadIssue> seen;
 
-        @PostInject
+        @PostLoad
         void check(final List<LoadIssue> issues) {
             seen = issues;
         }
@@ -61,12 +61,12 @@ class EntityBinderReadTest {
     }
 
     @Test
-    void missingKeysKeepDefaultsAndPostInjectRuns() {
+    void missingKeysKeepDefaultsAndPostLoadRuns() {
         final Cfg cfg = configFrom("{\"name\":\"prod\"}").loadAs(Cfg.class, codec);
         assertEquals(25565, cfg.port);   // absent -> default kept
         assertEquals("prod", cfg.name);  // present -> bound
         assertTrue(cfg.enabled);         // absent -> default kept
-        assertTrue(cfg.postRan);         // @PostInject ran
+        assertTrue(cfg.postRan);         // @PostLoad ran
     }
 
     @Test

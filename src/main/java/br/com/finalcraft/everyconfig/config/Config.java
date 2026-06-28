@@ -748,7 +748,7 @@ public class Config implements AutoCloseable {
         return new EntityBinder<>(this, jt, codec, options);
     }
 
-    /** Convenience: bind the whole tree to a fresh {@code T} (runs {@code @PostInject}). */
+    /** Convenience: bind the whole tree to a fresh {@code T} (runs {@code @PostLoad}). */
     public <T> T loadAs(final Class<T> type, final Codec codec) {
         return bind(type, codec).read("");
     }
@@ -764,7 +764,7 @@ public class Config implements AutoCloseable {
     /**
      * Bind the subtree at {@code path} to a fresh {@code T} — the path-scoped {@link #loadAs}, using the
      * codec this config was opened with. An absent path binds the type's defaults; a root path
-     * ({@code ""}/{@code null}) binds the whole tree. Runs {@code @PostInject}.
+     * ({@code ""}/{@code null}) binds the whole tree. Runs {@code @PostLoad}.
      *
      * @throws IllegalStateException if this config was not opened with a codec (e.g. {@code new Config()})
      */
