@@ -7,7 +7,6 @@ group = 'br.com.finalcraft'
 version = libs.versions.everyconfig.get()
 
 repositories {
-    mavenLocal()
     mavenCentral()
     maven { url = 'https://maven.petrus.dev/public' }
 }
