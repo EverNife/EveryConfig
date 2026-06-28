@@ -8,6 +8,7 @@ import br.com.finalcraft.everyconfig.annotation.KeyTransformCase;
 import br.com.finalcraft.everyconfig.annotation.PostInject;
 import br.com.finalcraft.everyconfig.annotation.Section;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
+import br.com.finalcraft.everyconfig.binding.LoadIssueAware;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import lombok.Data;
@@ -292,6 +293,47 @@ public final class Dtos {
         @PostInject
         void check(final List<LoadIssue> issues) {
             seen = issues;
+        }
+    }
+
+    /** A {@code @PostInject} that throws — binding must surface it as a {@code BindException}. */
+    public static class PostInjectThrowsPojo {
+        public int port = 1;
+
+        @PostInject
+        void boom() {
+            throw new IllegalStateException("post-inject failure");
+        }
+    }
+
+    /** Inherited {@code @PostInject}: an overridden hook must run once (de-duped by method name). */
+    public static class InheritedPostInjectBase {
+        public transient int hookCalls = 0;
+
+        @PostInject
+        void hook() {
+            hookCalls++;
+        }
+    }
+
+    public static class InheritedPostInjectSub extends InheritedPostInjectBase {
+        @Override
+        @PostInject
+        void hook() {
+            hookCalls++;
+        }
+    }
+
+    // ----- LoadIssueAware -----
+
+    /** Receives the bind's collected issues via {@link LoadIssueAware}. */
+    public static class IssueAwarePojo implements LoadIssueAware {
+        public int count;
+        public transient List<LoadIssue> received;
+
+        @Override
+        public void setLoadIssues(final List<LoadIssue> issues) {
+            this.received = issues;
         }
     }
 
