@@ -147,4 +147,11 @@ class TomlConfigTest extends AbstractConfigTest {
         assertEquals(3, r.getList("nums").size());
         assertEquals(0, r.getList("empty").size());
     }
+
+    @Test
+    @Order(220)
+    @DisplayName("[toml] the emitted layout matches the golden fixture byte-for-byte")
+    void goldenLayout_byteStable() throws IOException {
+        assertGoldenLayout();
+    }
 }

@@ -56,4 +56,11 @@ class YamlConfigTest extends AbstractConfigTest {
         assertTrue(text.contains("  # the primary tag\n  - alpha"),
                 "the element comment should sit directly above its item:\n" + text);
     }
+
+    @Test
+    @Order(301)
+    @DisplayName("[yaml] the emitted layout matches the golden fixture byte-for-byte")
+    void goldenLayout_byteStable() throws IOException {
+        assertGoldenLayout();
+    }
 }
