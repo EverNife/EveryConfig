@@ -18,8 +18,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Converts between a collection of {@code @KeyIndex}-bearing entities and the key-major layout the old library
- * used: a map whose section names are the stringified id values and whose bodies omit the id (it would
+ * Converts between a collection of {@code @KeyIndex}-bearing entities and a key-major layout:
+ * a map whose section names are the stringified id values and whose bodies omit the id (it would
  * just duplicate the section key). On read the section key is the SOLE authority for the id; a stray,
  * disagreeing id in the body is overridden and reported. This makes {@code read(write(coll))} reproduce
  * the id set exactly.

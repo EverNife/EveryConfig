@@ -51,8 +51,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * The dynamic configuration handle: a thin wrapper over a canonical, mutable Jackson {@link ObjectNode}
  * (the single source of truth) plus a sibling {@link CommentTree} and a captured {@link KeyOrder}. It
  * carries the full dynamic path API ({@code setValue}/{@code getValue}/typed getters/{@code getKeys}/
- * {@code getOrSetDefaultValue}). Typed entity binding and file I/O live elsewhere; {@code Config} is a
- * pure data+API object.
+ * {@code getOrSetValueIfAbsent}), the typed entity binding ({@code bind}/{@code loadAs}) as a derived view,
+ * and the back-store-backed lifecycle ({@code open}/{@code save}/{@code reload}/{@code close}).
  *
  * <p>Single-writer-by-convention: concurrent reads are fine; concurrent writes (or a write racing a
  * read) require caller synchronization. {@link #getRoot()} exposes the tree directly as the escape

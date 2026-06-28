@@ -7,7 +7,8 @@ import java.lang.annotation.Target;
 
 /**
  * Marks a method to run right AFTER an entity is read (bound) from the tree. The method takes either no
- * parameters or a single {@code List<LoadIssue>} parameter (to inspect or reject load problems). Useful
+ * parameters or a single {@code ConfigContext} parameter (whose {@code issues()} exposes load problems
+ * to inspect or reject). Useful
  * for validation and derived-field computation. Overridden methods run once (de-duped by name).
  */
 @Target(ElementType.METHOD)
