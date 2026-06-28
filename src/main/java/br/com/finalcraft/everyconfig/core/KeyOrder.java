@@ -1,5 +1,6 @@
 package br.com.finalcraft.everyconfig.core;
 
+import br.com.finalcraft.everyconfig.core.tree.DPath;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -49,7 +50,7 @@ public final class KeyOrder {
             final Map.Entry<String, JsonNode> e = it.next();
             keys.add(e.getKey());
             if (e.getValue() instanceof ObjectNode) {
-                final String childPath = path.isEmpty() ? e.getKey() : path + sep + e.getKey();
+                final String childPath = DPath.joinSegment(path, e.getKey(), sep);
                 captureInto((ObjectNode) e.getValue(), childPath, sep, out);
             }
         }

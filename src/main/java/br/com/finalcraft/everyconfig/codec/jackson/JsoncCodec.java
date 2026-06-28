@@ -9,6 +9,7 @@ import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
+import br.com.finalcraft.everyconfig.core.tree.DPath;
 import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -192,7 +193,7 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
             final String key = keys.get(i);
             final boolean last = i == keys.size() - 1;
             final JsonNode val = node.get(key);
-            final String path = parentPath.isEmpty() ? key : parentPath + SEP + key;
+            final String path = DPath.joinSegment(parentPath, key, SEP);
 
             for (int b = comments.getBlankLinesBefore(path); b > 0; b--) {
                 out.append('\n');
@@ -236,7 +237,7 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
             final String elemIndent = keyIndent + "  ";
             out.append("[\n");
             for (int i = 0; i < arr.size(); i++) {
-                final String block = comments.getComment(path + SEP + i, CommentType.BLOCK);
+                final String block = comments.getComment(DPath.joinSegment(path, String.valueOf(i), SEP), CommentType.BLOCK);
                 if (block != null) {
                     for (final String commentLine : block.split("\n", -1)) {
                         out.append(elemIndent).append(prefixComment(commentLine)).append('\n');
@@ -271,7 +272,7 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
     /** True when any element under {@code path} (as {@code path.i}) carries a block comment. */
     private static boolean anyElementComment(final ArrayNode arr, final String path, final CommentTree comments) {
         for (int i = 0; i < arr.size(); i++) {
-            if (comments.getComment(path + SEP + i, CommentType.BLOCK) != null) {
+            if (comments.getComment(DPath.joinSegment(path, String.valueOf(i), SEP), CommentType.BLOCK) != null) {
                 return true;
             }
         }
@@ -338,7 +339,7 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
                 // At the array's own depth, attach a pending block comment to a SCALAR element (path.i);
                 // object/nested elements keep the whole-array path and carry no per-element comment.
                 if (before == 1 && arrayPath != null && isScalarElementLine(trimmed)) {
-                    assignElementComment(tree, arrayPath + SEP + arrayElementIndex, pending);
+                    assignElementComment(tree, DPath.joinSegment(arrayPath, String.valueOf(arrayElementIndex), SEP), pending);
                     arrayElementIndex++;
                 }
                 pending.clear();
@@ -539,9 +540,9 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
         final StringBuilder sb = new StringBuilder();
         final Iterator<String> it = ancestors.descendingIterator(); // outermost -> innermost
         while (it.hasNext()) {
-            sb.append(it.next()).append(SEP);
+            sb.append(DPath.escapeSegment(it.next(), SEP)).append(SEP);
         }
-        return sb.append(key).toString();
+        return sb.append(DPath.escapeSegment(key, SEP)).toString();
     }
 
     private static String spaces(final int n) {

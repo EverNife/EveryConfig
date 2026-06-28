@@ -9,6 +9,7 @@ import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
+import br.com.finalcraft.everyconfig.core.tree.DPath;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -205,7 +206,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
         final String ind = spaces(indent);
         for (final String key : orderedFieldNames(node, parentPath, order)) {
             final JsonNode val = node.get(key);
-            final String path = parentPath.isEmpty() ? key : parentPath + SEP + key;
+            final String path = DPath.joinSegment(parentPath, key, SEP);
 
             for (int b = comments.getBlankLinesBefore(path); b > 0; b--) {
                 out.append('\n'); // preserve the file's vertical spacing above this key
@@ -239,7 +240,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
                     // comment sits above its element. (Object/nested or uncommented sequences render whole
                     // below, byte-identical to before.)
                     for (int i = 0; i < arr.size(); i++) {
-                        final String elemBlock = comments.getComment(path + SEP + i, CommentType.BLOCK);
+                        final String elemBlock = comments.getComment(DPath.joinSegment(path, String.valueOf(i), SEP), CommentType.BLOCK);
                         if (elemBlock != null) {
                             for (final String commentLine : elemBlock.split("\n", -1)) {
                                 out.append(ind).append("  ").append(prefixComment(commentLine)).append('\n');
@@ -293,7 +294,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
     /** True when any element under {@code path} (as {@code path.i}) carries a block comment. */
     private boolean anyElementComment(final ArrayNode arr, final String path, final CommentTree comments) {
         for (int i = 0; i < arr.size(); i++) {
-            if (comments.getComment(path + SEP + i, CommentType.BLOCK) != null) {
+            if (comments.getComment(DPath.joinSegment(path, String.valueOf(i), SEP), CommentType.BLOCK) != null) {
                 return true;
             }
         }
@@ -390,7 +391,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
                         currentArrayPath = arrayPath;
                         arrayElementIndex = 0;
                     }
-                    assignBlockComment(tree, arrayPath + SEP + arrayElementIndex, pending);
+                    assignBlockComment(tree, DPath.joinSegment(arrayPath, String.valueOf(arrayElementIndex), SEP), pending);
                     arrayElementIndex++;
                 }
                 pending.clear();
@@ -477,7 +478,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
             if (sb.length() > 0) {
                 sb.append(SEP);
             }
-            sb.append(it.next().key);
+            sb.append(DPath.escapeSegment(it.next().key, SEP));
         }
         return sb.toString();
     }
@@ -655,9 +656,9 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
         final StringBuilder sb = new StringBuilder();
         final Iterator<Frame> it = ancestors.descendingIterator(); // outermost -> innermost
         while (it.hasNext()) {
-            sb.append(it.next().key).append(SEP);
+            sb.append(DPath.escapeSegment(it.next().key, SEP)).append(SEP);
         }
-        return sb.append(key).toString();
+        return sb.append(DPath.escapeSegment(key, SEP)).toString();
     }
 
     private static String spaces(final int n) {

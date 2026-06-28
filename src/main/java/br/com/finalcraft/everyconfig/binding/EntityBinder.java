@@ -15,6 +15,7 @@ import br.com.finalcraft.everyconfig.config.Config;
 import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
+import br.com.finalcraft.everyconfig.core.tree.DPath;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -348,9 +349,16 @@ public final class EntityBinder<T> {
                 continue;
             }
             final String key = BindingNames.keyFor(f);
+            final char sep = config.pathSeparator();
             final Section sec = f.getAnnotation(Section.class);
-            final String fieldPath = (sec != null && !sec.value().isEmpty()) ? sec.value() + "." + key : key;
-            final String path = basePath.isEmpty() ? fieldPath : basePath + config.pathSeparator() + fieldPath;
+            String fieldPath = "";
+            if (sec != null && !sec.value().isEmpty()) {
+                for (final String seg : sec.value().split("\\.")) { // @Section spells nesting with '.'
+                    fieldPath = DPath.joinSegment(fieldPath, seg, sep);
+                }
+            }
+            fieldPath = DPath.joinSegment(fieldPath, key, sep); // a dot inside the key stays escaped in the path
+            final String path = basePath.isEmpty() ? fieldPath : DPath.join(basePath, fieldPath, sep);
             final String text = String.join("\n", c.value());
             if (c.mode() == CommentMode.OVERRIDE) {
                 comments.setComment(path, text, CommentType.BLOCK); // documentation stays current
