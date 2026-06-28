@@ -164,28 +164,28 @@ public class ConfigSection {
 
     // ---- defaults ----
 
-    public <D> D getOrSetDefaultValue(final String sub, final D def) {
-        return config.getOrSetDefaultValue(concatSubPath(sub), def);
+    public <D> D getOrSetValueIfAbsent(final String sub, final D def) {
+        return config.getOrSetValueIfAbsent(concatSubPath(sub), def);
     }
 
-    public <D> D getOrSetDefaultValue(final String sub, final D def, final String comment) {
-        return config.getOrSetDefaultValue(concatSubPath(sub), def, comment);
+    public <D> D getOrSetValueIfAbsent(final String sub, final D def, final String comment) {
+        return config.getOrSetValueIfAbsent(concatSubPath(sub), def, comment);
     }
 
-    public <D> List<D> getOrSetDefaultValue(final String sub, final List<D> def) {
-        return config.getOrSetDefaultValue(concatSubPath(sub), def);
+    public <D> List<D> getOrSetValueIfAbsent(final String sub, final List<D> def) {
+        return config.getOrSetValueIfAbsent(concatSubPath(sub), def);
     }
 
-    public <D> List<D> getOrSetDefaultValue(final String sub, final List<D> def, final String comment) {
-        return config.getOrSetDefaultValue(concatSubPath(sub), def, comment);
+    public <D> List<D> getOrSetValueIfAbsent(final String sub, final List<D> def, final String comment) {
+        return config.getOrSetValueIfAbsent(concatSubPath(sub), def, comment);
     }
 
-    public void setDefaultValue(final String sub, final Object value) {
-        config.setDefaultValue(concatSubPath(sub), value);
+    public void setValueIfAbsent(final String sub, final Object value) {
+        config.setValueIfAbsent(concatSubPath(sub), value);
     }
 
-    public void setDefaultValue(final String sub, final Object value, final String comment) {
-        config.setDefaultValue(concatSubPath(sub), value, comment);
+    public void setValueIfAbsent(final String sub, final Object value, final String comment) {
+        config.setValueIfAbsent(concatSubPath(sub), value, comment);
     }
 
     // ---- comments ----
