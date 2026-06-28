@@ -16,7 +16,7 @@ import java.time.Duration;
 import java.util.zip.CRC32;
 
 /**
- * A {@link Backend} over a single file. Writes go through a unique sibling temp file plus an atomic
+ * A {@link BackStore} over a single file. Writes go through a unique sibling temp file plus an atomic
  * rename, so a concurrent reader never sees a torn or truncated file. On filesystems without atomic
  * rename it falls back to a plain replace (still safe against truncation, since the temp is written
  * whole first).
@@ -26,18 +26,18 @@ import java.util.zip.CRC32;
  * lose the write entirely but never corrupt the previous content — while {@code FSYNC} forces the bytes
  * and the rename to the device before returning.
  */
-public final class AtomicFileBackend implements Backend {
+public final class AtomicFileBackStore implements BackStore {
 
     private static final Charset CS = StandardCharsets.UTF_8;
 
     private final Path filePath;
     private final Durability durability;
 
-    public AtomicFileBackend(final Path filePath) {
+    public AtomicFileBackStore(final Path filePath) {
         this(filePath, Durability.OS_CACHE);
     }
 
-    public AtomicFileBackend(final Path filePath, final Durability durability) {
+    public AtomicFileBackStore(final Path filePath, final Durability durability) {
         this.filePath = filePath;
         this.durability = durability != null ? durability : Durability.OS_CACHE;
     }

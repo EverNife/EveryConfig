@@ -10,10 +10,10 @@ import java.time.Duration;
  * lost user edits. Kept separate from the codec (which owns text&lt;-&gt;tree) so the two evolve
  * independently.
  *
- * <p>The backend makes no policy decision: it never decides to back up or to reload, it exposes the
+ * <p>The back-store makes no policy decision: it never decides to back up or to reload, it exposes the
  * primitives and is driven by the {@code Config} above it.
  */
-public interface Backend {
+public interface BackStore {
 
     /** Stable identity for logs/snapshots, e.g. the absolute file path or {@code "(in-memory)"}. */
     String describe();
@@ -53,7 +53,7 @@ public interface Backend {
      */
     String backupUnparseable() throws IOException;
 
-    /** Opens a watcher over this backend, or a no-op watcher if unsupported. */
+    /** Opens a watcher over this back-store, or a no-op watcher if unsupported. */
     Watcher watch(Duration pollInterval, Runnable onExternalChange);
 
     /**

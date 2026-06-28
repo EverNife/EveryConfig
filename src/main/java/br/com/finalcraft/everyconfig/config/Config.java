@@ -1,7 +1,7 @@
 package br.com.finalcraft.everyconfig.config;
 
-import br.com.finalcraft.everyconfig.io.AtomicFileBackend;
-import br.com.finalcraft.everyconfig.io.Backend;
+import br.com.finalcraft.everyconfig.io.AtomicFileBackStore;
+import br.com.finalcraft.everyconfig.io.BackStore;
 import br.com.finalcraft.everyconfig.io.ConfigExecutor;
 import br.com.finalcraft.everyconfig.binding.BindOptions;
 import br.com.finalcraft.everyconfig.binding.BindResult;
@@ -67,12 +67,12 @@ public class Config implements AutoCloseable {
 
     // ---- lifecycle (null for an in-memory Config not opened over a file) ----
     private final ReentrantLock lock = new ReentrantLock(true);
-    private Backend backend;
+    private BackStore backStore;
     private Codec lifecycleCodec;
-    private volatile Backend.Fingerprint loaded = Backend.Fingerprint.ABSENT;
+    private volatile BackStore.Fingerprint loaded = BackStore.Fingerprint.ABSENT;
     private volatile LoadStatus lastLoadStatus = LoadStatus.NEVER_LOADED;
     private boolean dirty = false;
-    private Backend.Watcher watcher;
+    private BackStore.Watcher watcher;
     private volatile Runnable onReload;
 
     private transient boolean newDefaultValueToSave = false;
@@ -790,7 +790,7 @@ public class Config implements AutoCloseable {
         return lifecycleCodec;
     }
 
-    /** Merge a POJO into this config's tree (the in-memory write side; persistence is the backend's job). */
+    /** Merge a POJO into this config's tree (the in-memory write side; persistence is the backStore's job). */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public void mergeFrom(final Object pojo, final Codec codec) {
         final EntityBinder binder = bind(pojo.getClass(), codec);
@@ -839,7 +839,7 @@ public class Config implements AutoCloseable {
         newDefaultValueToSave = false;
     }
 
-    // ==================== lifecycle (backend-backed) ====================
+    // ==================== lifecycle (backStore-backed) ====================
 
     /**
      * Opens a Config over a file, choosing the codec from the file's extension via
@@ -867,18 +867,18 @@ public class Config implements AutoCloseable {
      * Never throws on a malformed file — a corrupt config must not block startup.
      */
     public static Config open(final Path path, final Codec codec) {
-        return open(path, codec, Backend.Durability.OS_CACHE);
+        return open(path, codec, BackStore.Durability.OS_CACHE);
     }
 
     /**
      * As {@link #open(Path, Codec)}, but choosing how durably each {@link #save()} must land:
-     * {@link Backend.Durability#OS_CACHE} (the default) returns once the atomic rename is visible, while
-     * {@link Backend.Durability#FSYNC} forces the bytes to the storage device first (slower, crash-safe).
+     * {@link BackStore.Durability#OS_CACHE} (the default) returns once the atomic rename is visible, while
+     * {@link BackStore.Durability#FSYNC} forces the bytes to the storage device first (slower, crash-safe).
      */
     public static Config open(final Path path, final Codec codec,
-                              final Backend.Durability durability) {
+                              final BackStore.Durability durability) {
         final Config cfg = new Config();
-        cfg.backend = new AtomicFileBackend(path, durability);
+        cfg.backStore = new AtomicFileBackStore(path, durability);
         cfg.lifecycleCodec = codec;
         cfg.bindCoercionTo(codec);
         cfg.loadInternal(true);
@@ -907,18 +907,18 @@ public class Config implements AutoCloseable {
         }
     }
 
-    private void requireBackend() {
-        if (backend == null || lifecycleCodec == null) {
-            throw new IllegalStateException("this Config has no backend; build it with Config.open(path, codec)");
+    private void requireBackStore() {
+        if (backStore == null || lifecycleCodec == null) {
+            throw new IllegalStateException("this Config has no backStore; build it with Config.open(path, codec)");
         }
     }
 
     private void loadInternal(final boolean backupOnParseFail) {
         byte[] bytes;
         try {
-            bytes = backend.readBytes();
+            bytes = backStore.readBytes();
         } catch (final IOException e) {
-            throw new ConfigIOException("failed to read " + backend.describe(), e);
+            throw new ConfigIOException("failed to read " + backStore.describe(), e);
         }
         if (bytes == null || bytes.length == 0) {
             applyLoaded(nodes.objectNode(), new CommentTree(), KeyOrder.empty());
@@ -935,11 +935,11 @@ public class Config implements AutoCloseable {
                 lastLoadStatus = LoadStatus.PARSE_FAILED_BACKED_UP;
             }
         }
-        loaded = backend.fingerprint();
+        loaded = backStore.fingerprint();
     }
 
     private void decodeInto(final byte[] bytes) {
-        final String text = new String(bytes, backend.charset());
+        final String text = new String(bytes, backStore.charset());
         final JsonNode tree = lifecycleCodec.readTree(text);
         final ObjectNode newRoot = (tree instanceof ObjectNode) ? (ObjectNode) tree : nodes.objectNode();
         final CommentTree newComments;
@@ -969,12 +969,12 @@ public class Config implements AutoCloseable {
         } else {
             text = lifecycleCodec.writeTreePlain(root);
         }
-        return text.getBytes(backend.charset());
+        return text.getBytes(backStore.charset());
     }
 
     private void safeBackup() {
         try {
-            backend.backupUnparseable();
+            backStore.backupUnparseable();
         } catch (final IOException ignored) {
             // best-effort: a failed backup must not block the load
         }
@@ -982,17 +982,17 @@ public class Config implements AutoCloseable {
 
     /** Encodes the tree (with comments + key order) and writes it atomically; serialized per-Config. */
     public void save() {
-        requireBackend();
+        requireBackStore();
         lock.lock();
         try {
-            final Backend.Fingerprint written = backend.writeAtomic(encode());
+            final BackStore.Fingerprint written = backStore.writeAtomic(encode());
             loaded = written;
             if (watcher != null) {
                 watcher.refreshSnapshot(written);
             }
             dirty = false;
         } catch (final IOException e) {
-            throw new ConfigIOException("failed to save " + backend.describe(), e);
+            throw new ConfigIOException("failed to save " + backStore.describe(), e);
         } finally {
             lock.unlock();
         }
@@ -1016,23 +1016,23 @@ public class Config implements AutoCloseable {
      * ({@link LoadStatus#PARSE_FAILED_KEPT}, a recorded divergence). Only a clean parse replaces the tree.
      */
     public void reload() {
-        requireBackend();
+        requireBackStore();
         lock.lock();
         try {
-            if (!backend.exists()) {
+            if (!backStore.exists()) {
                 lastLoadStatus = LoadStatus.ABSENT;
                 return;
             }
-            final byte[] bytes = backend.readBytes();
+            final byte[] bytes = backStore.readBytes();
             try {
                 decodeInto(bytes);
-                loaded = backend.fingerprint();
+                loaded = backStore.fingerprint();
                 lastLoadStatus = LoadStatus.OK;
             } catch (final CodecException parseFail) {
                 lastLoadStatus = LoadStatus.PARSE_FAILED_KEPT;
             }
         } catch (final IOException e) {
-            throw new ConfigIOException("failed to reload " + backend.describe(), e);
+            throw new ConfigIOException("failed to reload " + backStore.describe(), e);
         } finally {
             lock.unlock();
         }
@@ -1044,7 +1044,7 @@ public class Config implements AutoCloseable {
 
     /** True if the durable file's fingerprint differs from what was last loaded/saved. */
     public boolean hasBeenModified() {
-        return backend != null && !backend.fingerprint().equals(loaded);
+        return backStore != null && !backStore.fingerprint().equals(loaded);
     }
 
     public LoadStatus lastLoadStatus() {
@@ -1067,12 +1067,12 @@ public class Config implements AutoCloseable {
      * stat-ing it — a full read per poll, hence opt-in).
      */
     public Config withAutoReload(final Duration pollInterval, final boolean detectInPlaceEdits) {
-        requireBackend();
+        requireBackStore();
         if (pollInterval == null || pollInterval.isZero() || pollInterval.isNegative()) {
             throw new IllegalArgumentException("auto-reload poll interval must be positive");
         }
         close();
-        this.watcher = backend.watch(pollInterval, () -> {
+        this.watcher = backStore.watch(pollInterval, () -> {
             reload();
             final Runnable cb = this.onReload;
             if (cb != null) {
@@ -1095,7 +1095,7 @@ public class Config implements AutoCloseable {
     /** Stops the watcher, if any. Idempotent. */
     @Override
     public void close() {
-        final Backend.Watcher w = this.watcher;
+        final BackStore.Watcher w = this.watcher;
         if (w != null) {
             w.close();
             this.watcher = null;

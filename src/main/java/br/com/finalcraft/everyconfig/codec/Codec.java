@@ -16,7 +16,7 @@ import java.nio.charset.StandardCharsets;
  * {@link #treeToValue}/{@link #valueToTree} are a derived binding view backed by the SAME Jackson
  * mapper, so a dynamic round-trip and a binding round-trip observe identical node shapes.
  *
- * <p>The codec works in {@code String} text; charset/byte handling is the backend's job, which decodes
+ * <p>The codec works in {@code String} text; charset/byte handling is the back-store's job, which decodes
  * bytes to a {@code String} with {@link #charset()} before {@link #readTree} and encodes the emitter's
  * {@code String} back to bytes for the atomic write.
  *
@@ -42,7 +42,7 @@ public interface Codec {
     /** This format's comment round-trip fidelity. Never null. */
     CommentFidelity commentFidelity();
 
-    /** The charset the backend uses to read/write text for this codec. Defaults to UTF-8. */
+    /** The charset the back-store uses to read/write text for this codec. Defaults to UTF-8. */
     default Charset charset() {
         return StandardCharsets.UTF_8;
     }

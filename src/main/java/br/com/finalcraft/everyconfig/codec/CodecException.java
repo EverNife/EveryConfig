@@ -3,7 +3,7 @@ package br.com.finalcraft.everyconfig.codec;
 /**
  * Unchecked wrapper for any encode/decode failure raised by a {@link Codec}. Thrown on malformed
  * input ({@link Codec#readTree}), on a serialization failure, and when a structural contract is
- * violated (e.g. a populated container handed to {@link CommentAware#writeScalar}). The backend turns
+ * violated (e.g. a populated container handed to {@link CommentAware#writeScalar}). The back-store turns
  * a read-time failure into its recovery flow.
  */
 public class CodecException extends RuntimeException {
