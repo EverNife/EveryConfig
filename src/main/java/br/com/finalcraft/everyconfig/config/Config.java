@@ -714,18 +714,33 @@ public class Config implements AutoCloseable {
      * spacing AND those of every descendant) from {@code oldPath} to {@code newPath}. The moved comments
      * are written as authoritative, so they are preserved and not re-seeded. This is the explicit hook for
      * a config migration; reconciliation never infers a rename by itself.
+     *
+     * <p>Safe to run unconditionally on every startup. The returned {@link MigrationResult} tells a real
+     * move ({@link MigrationResult#MOVED}) from a benign re-run ({@link MigrationResult#ALREADY_MIGRATED},
+     * the source already moved) and from a suspicious no-op ({@link MigrationResult#SOURCE_ABSENT}, neither
+     * side exists — often a typo). When both sides exist the source overwrites the destination and the
+     * result is {@code MOVED}.
      */
-    public void migrateKey(final String oldPath, final String newPath) {
-        if (DPath.isRoot(oldPath) || DPath.isRoot(newPath) || oldPath.equals(newPath) || !contains(oldPath)) {
-            return;
+    public MigrationResult migrateKey(final String oldPath, final String newPath) {
+        if (DPath.isRoot(oldPath) || DPath.isRoot(newPath)) {
+            return MigrationResult.INVALID_ROOT;
+        }
+        if (oldPath.equals(newPath)) {
+            return MigrationResult.SAME_PATH;
+        }
+        if (!contains(oldPath)) {
+            // Source gone: the destination holding the data means the migration ran before (benign);
+            // an empty destination means there was nothing to migrate (often a typo in oldPath).
+            return contains(newPath) ? MigrationResult.ALREADY_MIGRATED : MigrationResult.SOURCE_ABSENT;
         }
         final JsonNode node = resolve(oldPath);
         // Detach the comment subtree BEFORE the data move so neither wipe (removeValue on the source,
         // setValue on the destination) can destroy it; re-attach it under the new path afterwards.
         final CommentTree.Snapshot movedComments = comments.detachSubtree(oldPath);
         removeValue(oldPath);
-        setValue(newPath, node); // a raw JsonNode passes through coercion unchanged
+        setValue(newPath, node); // a raw JsonNode passes through coercion unchanged (source overwrites target)
         comments.attachSubtree(newPath, movedComments);
+        return MigrationResult.MOVED;
     }
 
     // ==================== getOrSetValueIfAbsent (the seeding engine) ====================
