@@ -127,7 +127,9 @@ public final class NodeCoercion {
             return sb.toString();
         }
         if (n.isObject()) {
-            return n.toString();
+            // An object is not a string in any useful sense; fall back to the caller's default
+            // (mirrors the numeric getters, where a type mismatch yields null rather than a fabricated value).
+            return null;
         }
         return n.asText(); // numeric / boolean canonical
     }
