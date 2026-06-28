@@ -12,7 +12,7 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/** The filename-driven {@code open(...)} overloads (codec from extension, fail-fast) and {@code getLoadable}. */
+/** The filename-driven {@code open(...)} overloads (codec from extension, fail-fast) and {@code getValue}. */
 class ConfigOpenAndLoadableTest {
 
     @TempDir
@@ -56,26 +56,26 @@ class ConfigOpenAndLoadableTest {
     }
 
     @Test
-    void getLoadableBindsSubtreeWithLifecycleCodec() {
+    void getValueBindsSubtreeWithLifecycleCodec() {
         final Config c = Config.open(dir.resolve("c.yml").toString());
         c.setValue("db.url", "jdbc:x");
         c.setValue("db.maxPool", 25);
 
-        final Db db = c.getLoadable("db", Db.class);
+        final Db db = c.getValue("db", Db.class);
         assertEquals("jdbc:x", db.url);
         assertEquals(25, db.maxPool);
     }
 
     @Test
-    void getLoadableWithoutCodecThrows() {
-        assertThrows(IllegalStateException.class, () -> new Config().getLoadable("db", Db.class));
+    void getValueTypedWithoutCodecThrows() {
+        assertThrows(IllegalStateException.class, () -> new Config().getValue("db", Db.class));
     }
 
     @Test
-    void getLoadableExplicitCodec() {
+    void getValueExplicitCodec() {
         final JsonCodec json = new JsonCodec();
         final Config c = new Config((ObjectNode) json.readTree("{\"db\":{\"url\":\"u\",\"maxPool\":5}}"));
-        final Db db = c.getLoadable("db", Db.class, json);
+        final Db db = c.getValue("db", Db.class, json);
         assertEquals("u", db.url);
         assertEquals(5, db.maxPool);
     }
