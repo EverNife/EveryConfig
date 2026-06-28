@@ -596,18 +596,15 @@ public class Config implements AutoCloseable {
         return out;
     }
 
+    /** The UUID at {@code path}, or null when absent or malformed — tolerant like the numeric getters
+     *  (a bad value never throws; pass a default overload to substitute one). */
     public UUID getUUID(final String path) {
-        final String s = getString(path);
-        return s == null ? null : UUID.fromString(s);
+        return coercion.asUuid(resolve(path));
     }
 
     public UUID getUUID(final String path, final UUID def) {
-        try {
-            final UUID u = getUUID(path);
-            return u != null ? u : def;
-        } catch (final IllegalArgumentException e) {
-            return def;
-        }
+        final UUID u = coercion.asUuid(resolve(path));
+        return u != null ? u : def;
     }
 
     // ==================== keys / containment / sections ====================
