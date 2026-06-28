@@ -75,7 +75,11 @@ public class Config implements AutoCloseable {
     private BackStore.Watcher watcher;
     private volatile Runnable onReload;
 
-    private transient boolean newDefaultValueToSave = false;
+    // "The file's shape evolved": flipped true whenever a default (a value or comment the file lacked) is
+    // seeded. Distinct from `dirty`, which means "there is unsaved work" for ANY mutation — this tracks
+    // only default-seeding, so a caller can tell "I completed an old file with new keys" apart from "a
+    // value was edited". (Not serialized state — a Config is never serialized.)
+    private boolean newDefaultValueToSave = false;
     private List<LoadIssue> lastIdCollectionIssues = Collections.emptyList();
 
     public Config() {
@@ -956,6 +960,14 @@ public class Config implements AutoCloseable {
 
     // ==================== save-defaults bookkeeping ====================
 
+    /**
+     * Whether any default (a value or comment the file lacked) was seeded since the last
+     * {@link #clearNewDefaultValueToSave()}. This is a finer signal than the lifecycle's dirty flag:
+     * {@link #saveIfDirty()} persists on ANY unsaved mutation, while this means specifically "the file's
+     * shape evolved — keys/comments that did not exist were added". Use it to tell completing an old file
+     * with new defaults apart from an ordinary value edit; use {@link #saveIfDirty()} when you only care
+     * that something changed.
+     */
     public boolean isNewDefaultValueToSave() {
         return newDefaultValueToSave;
     }
