@@ -37,7 +37,7 @@ class SectionPlacementTest {
         final Config c = new Config();
         final Conf conf = new Conf();
         conf.maxSize = 25;
-        c.mergeFrom(conf, json);
+        c.bind(Conf.class, json).write("", conf);
 
         assertEquals(25, c.getInt("database.pool.max-size")); // nested, not flat
         assertFalse(c.contains("max-size"));
@@ -52,7 +52,7 @@ class SectionPlacementTest {
     void sectionFieldSeedsItsCommentAtTheNestedPath() {
         final YamlCodec yaml = new YamlCodec();
         final Config c = new Config();
-        c.mergeFrom(new Documented(), yaml);
+        c.bind(Documented.class, yaml).write("", new Documented());
         assertEquals(5, c.getInt("db.poolSize"));
         assertEquals("the pool size", c.getComment("db.poolSize"));
     }
