@@ -51,7 +51,7 @@ state is a Jackson `ObjectNode` tree that every format reads into and writes out
   comments — through YAML, TOML and JSONC. JSON declares no comment fidelity and never pretends to.
 - **🧩 Typed binding that *merges*.** Bind the tree to a POJO when you want types; on save the binding **merges
   into the tree** — unknown keys a user added by hand always survive, and the tree wins on conflict.
-- **🌱 Self-healing defaults.** `getOrSetDefaultValue(path, def, comment)` seeds a value *and* its documentation
+- **🌱 Self-healing defaults.** `getOrSetValueIfAbsent(path, def, comment)` seeds a value *and* its documentation
   only when absent, so it is safe to call on every startup.
 - **🛟 Corruption-proof startup.** A malformed file is backed up to `.bak` and the config starts empty — a
   broken config never blocks boot.
@@ -120,7 +120,7 @@ import br.com.finalcraft.everyconfig.config.Config;
 Config cfg = Config.open("server.yml"); // codec chosen from the .yml extension (fail-fast if unknown)
 
 cfg.setValue("server.host", "localhost");
-int port = cfg.getOrSetDefaultValue("server.port", 25565, "the listen port"); // seeds value + comment if absent
+int port = cfg.getOrSetValueIfAbsent("server.port", 25565, "the listen port"); // seeds value + comment if absent
 
 cfg.save(); // atomic write; comments + key order preserved
 ```
@@ -138,9 +138,9 @@ Config cfg = Config.open("server.toml"); // or pass a codec explicitly: Config.o
 Need types? Bind the tree to a POJO:
 
 ```java
-DbConfig db = cfg.getLoadable("database", DbConfig.class); // bind the subtree at a path (path-scoped loadAs)
+DbConfig db = cfg.getValue("database", DbConfig.class); // read the subtree at a path bound to the type
 db.maxPool = 25;
-cfg.mergeFrom(db, codec);                                  // merge the POJO back (unknown keys survive)
+cfg.setValue("database", db);                           // a POJO setValue MERGES (unknown keys + comments survive)
 cfg.save();
 ```
 
@@ -159,7 +159,7 @@ cfg.save();
 
 1. **The tree is canonical.** The dynamic API operates on the `ObjectNode`; typed binding is a derived view;
    on conflict the **tree wins** (unknown keys survive) and a binding save **merges**, never replaces.
-2. **Comments are seed/override.** `@Comment` (and `getOrSetDefaultValue(...,comment)`) write comments in two
+2. **Comments are seed/override.** `@Comment` (and `getOrSetValueIfAbsent(...,comment)`) write comments in two
    explicit modes — rewrite-every-save or write-once.
 3. **Comment fidelity is a codec capability** — each codec declares `LOSSLESS` / `LOSSY` / `NONE`.
 4. **Save is reconciliation** against the captured (data, comments, key order): file order is preserved, new
@@ -199,11 +199,11 @@ cfg.getConfigSection("a.b");        // a scoped view that delegates back with th
 
 ## Default values & comments
 
-`getOrSetDefaultValue` seeds on first run and lets the file win afterwards. Comments come in **two write modes**:
+`getOrSetValueIfAbsent` seeds on first run and lets the file win afterwards. Comments come in **two write modes**:
 
 ```java
 // seeds the value AND the comment only if the path is absent — safe on every startup
-int port = cfg.getOrSetDefaultValue("server.port", 25565, "the listen port");
+int port = cfg.getOrSetValueIfAbsent("server.port", 25565, "the listen port");
 
 cfg.setComment("server.port", "ALWAYS overwritten on save");          // authoritative
 cfg.setDefaultComment("server.port", "written only if absent");        // user-edited comment wins
@@ -231,19 +231,26 @@ class DbConfig {
     @Section("database.pool")                       // a flat field placed under a nested path
     int maxSize = 50;
 
-    @PostInject
+    @PostLoad
     void validate() { /* runs after binding */ }
 }
 
 DbConfig db = cfg.loadAs(DbConfig.class, codec);    // lenient by default
 ```
 
+- **Path-oriented binder.** `cfg.bind(type[, codec]).read(path)` / `readInto(path, target)` / `write(path, pojo)`
+  (the root is the empty path `""`); `read*Result(...)` variants carry the issues. The Config façade wraps it:
+  `getValue(path, type)` (typed read), `getValueInto(path, target)`, `getList(path, type)`, and a POJO
+  `setValue(path, pojo)` (the annotation-aware merge).
 - **Lenient bind (default):** a value that can't be coerced is recorded as a `LoadIssue` and the field keeps
-  its real default; `STRICT` throws a `BindException` on the first mismatch. Use `loadAsResult(...)` /
-  `bindResult()` to get a `BindResult<T>` carrying the value **and** the issues together.
+  its real default; `STRICT` throws a `BindException` on the first mismatch. Use `loadAsResult(...)` (or the
+  binder's `readResult(...)`) to get a `BindResult<T>` carrying the value **and** the issues together.
 - **Annotations:** `@Key` (rename + case, or class-wide via `@JsonNaming(KeyCaseStrategy.Kebab.class)`),
   `@Comment` (+ `CommentMode`), `@Section` (nested placement, on top-level **or nested-POJO** fields), `@Id`
-  (collection indexing), `@PostInject` (run after binding). Native Jackson annotations keep working too.
+  (collection indexing). Native Jackson annotations keep working too.
+- **Lifecycle hooks:** `@PreLoad`/`@PostLoad`/`@PreSave`/`@PostSave` methods (no-arg or a single `ConfigContext`)
+  fire around the binder's read/write; the opt-in `ConfigLifecycle` interface offers the same four. Each gets
+  a `ConfigContext` (`section()` + `issues()`).
 - **Obsolete keys** (in the file, not declared by the POJO): `ObsoletePolicy.PRESERVE` (default), `REMOVE`
   (strip), or `COMMENT_OUT` (keep + stamp a deprecation comment, on comment-capable codecs).
 
@@ -335,7 +342,7 @@ EveryConfig/
     │   └── jackson/             # JsonCodec, YamlCodec, TomlCodec, JsoncCodec
     ├── io/                      # file I/O: atomic write, .bak, poll watcher, async executor
     ├── binding/                 # typed binding: EntityBinder + binding.schema, binding.merge, binding.introspect
-    └── annotation/              # @Key, @Comment, @Section, @Id, @PostInject (+ KeyTransformCase, CommentMode)
+    └── annotation/              # @Key, @Comment, @Section, @Id, @PostLoad (+ KeyTransformCase, CommentMode)
 ```
 
 **→ Deep dive: [Project Layout](https://github.com/EverNife/EveryConfig/wiki/Project-Layout)**
