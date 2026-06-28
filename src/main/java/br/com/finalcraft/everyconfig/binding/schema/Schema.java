@@ -6,7 +6,7 @@ import java.util.Set;
 /**
  * The set of keys a bound type declares at one level, used by the merge to decide what is "obsolete". A
  * CLOSED schema is a fixed-property POJO: a key it does not declare is obsolete. An OPEN schema is a
- * free-form node — a {@code Map} field, an {@code @Id}-indexed collection, or an unknown child of a
+ * free-form node — a {@code Map} field, an {@code @KeyIndex}-indexed collection, or an unknown child of a
  * closed node — and nothing in it is ever obsolete, which is what keeps obsolete-pruning from eating
  * user-supplied map entries.
  */

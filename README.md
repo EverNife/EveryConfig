@@ -28,7 +28,7 @@ data, never clobbers it.
 - [The dynamic API](#the-dynamic-api)
 - [Default values & comments](#default-values--comments)
 - [Typed entity binding](#typed-entity-binding)
-- [`@Id` collections](#id-collections)
+- [`@KeyIndex` collections](#keyindex-collections)
 - [Lifecycle, reload & watching](#lifecycle-reload--watching)
 - [Building & running the tests](#building--running-the-tests)
 - [Project layout](#project-layout)
@@ -246,8 +246,8 @@ DbConfig db = cfg.loadAs(DbConfig.class, codec);    // lenient by default
   its real default; `STRICT` throws a `BindException` on the first mismatch. Use `loadAsResult(...)` (or the
   binder's `readResult(...)`) to get a `BindResult<T>` carrying the value **and** the issues together.
 - **Annotations:** `@Key` (rename + case, or class-wide via `@JsonNaming(KeyCaseStrategy.Kebab.class)`),
-  `@Comment` (+ `CommentMode`), `@Section` (nested placement, on top-level **or nested-POJO** fields), `@Id`
-  (collection indexing). Native Jackson annotations keep working too.
+  `@Comment` (+ `CommentMode`), `@Section` (nested placement, on top-level **or nested-POJO** fields),
+  `@KeyIndex` (collection indexing). Native Jackson annotations keep working too.
 - **Lifecycle hooks:** `@PreLoad`/`@PostLoad`/`@PreSave`/`@PostSave` methods (no-arg or a single `ConfigContext`)
   fire around the binder's read/write; the opt-in `ConfigLifecycle` interface offers the same four. Each gets
   a `ConfigContext` (`section()` + `issues()`).
@@ -259,26 +259,26 @@ DbConfig db = cfg.loadAs(DbConfig.class, codec);    // lenient by default
 
 ---
 
-## `@Id` collections
+## `@KeyIndex` collections
 
-A `Collection<T>` whose element carries an `@Id` field serializes as a section keyed by the id (the id is
-omitted from the body; on read the section key is the sole authority).
+A `Collection<T>` whose element carries a `@KeyIndex` field serializes as a section keyed by that field's
+value (it is omitted from the body; on read the section key is the sole authority).
 
 ```java
-class Account { @Id String name; int balance; /* ... */ }
+class Account { @KeyIndex String name; int balance; /* ... */ }
 
-cfg.writeIdCollection("accounts", Arrays.asList(
+cfg.writeKeyIndexCollection("accounts", Arrays.asList(
         new Account("alice", 100), new Account("bob", 50)), codec);
 // accounts:
 //   alice: { balance: 100 }
 //   bob:   { balance: 50 }
 
-List<Account> back = cfg.readIdCollection("accounts", Account.class, codec);
+List<Account> back = cfg.readKeyIndexCollection("accounts", Account.class, codec);
 ```
 
-`@Id` may be `String`, a boxed/primitive numeric, `boolean` or `UUID`.
+`@KeyIndex` may be `String`, a boxed/primitive numeric, `boolean` or `UUID`.
 
-**→ Deep dive: [`@Id` Collections](https://github.com/EverNife/EveryConfig/wiki/Id-Collections)**
+**→ Deep dive: [`@KeyIndex` Collections](https://github.com/EverNife/EveryConfig/wiki/Id-Collections)**
 
 ---
 
@@ -342,7 +342,7 @@ EveryConfig/
     │   └── jackson/             # JsonCodec, YamlCodec, TomlCodec, JsoncCodec
     ├── io/                      # file I/O: atomic write, .bak, poll watcher, async executor
     ├── binding/                 # typed binding: EntityBinder + binding.schema, binding.merge, binding.introspect
-    └── annotation/              # @Key, @Comment, @Section, @Id, @PostLoad (+ KeyTransformCase, CommentMode)
+    └── annotation/              # @Key, @Comment, @Section, @KeyIndex, @PostLoad (+ KeyTransformCase, CommentMode)
 ```
 
 **→ Deep dive: [Project Layout](https://github.com/EverNife/EveryConfig/wiki/Project-Layout)**

@@ -2,7 +2,7 @@ package br.com.finalcraft.everyconfig.config.data;
 
 import br.com.finalcraft.everyconfig.annotation.Comment;
 import br.com.finalcraft.everyconfig.annotation.CommentMode;
-import br.com.finalcraft.everyconfig.annotation.Id;
+import br.com.finalcraft.everyconfig.annotation.KeyIndex;
 import br.com.finalcraft.everyconfig.annotation.Key;
 import br.com.finalcraft.everyconfig.annotation.KeyTransformCase;
 import br.com.finalcraft.everyconfig.annotation.PostLoad;
@@ -211,63 +211,63 @@ public final class Dtos {
         }
     }
 
-    // ----- @Id collection elements -----
+    // ----- @KeyIndex collection elements -----
 
-    /** String {@code @Id}. */
-    public static class IdAccountPojo {
-        @Id
+    /** String {@code @KeyIndex}. */
+    public static class KeyIndexAccountPojo {
+        @KeyIndex
         public String name;
         public int balance;
 
-        public IdAccountPojo() {
+        public KeyIndexAccountPojo() {
         }
 
-        public IdAccountPojo(final String name, final int balance) {
+        public KeyIndexAccountPojo(final String name, final int balance) {
             this.name = name;
             this.balance = balance;
         }
     }
 
-    /** Non-String {@code @Id} (UUID) — exercises key casting. */
-    public static class IdUuidPojo {
-        @Id
+    /** Non-String {@code @KeyIndex} (UUID) — exercises key casting. */
+    public static class KeyIndexUuidPojo {
+        @KeyIndex
         public UUID id;
         public String label;
 
-        public IdUuidPojo() {
+        public KeyIndexUuidPojo() {
         }
 
-        public IdUuidPojo(final UUID id, final String label) {
+        public KeyIndexUuidPojo(final UUID id, final String label) {
             this.id = id;
             this.label = label;
         }
     }
 
-    /** Non-String {@code @Id} (int). */
-    public static class IdIntPojo {
-        @Id
+    /** Non-String {@code @KeyIndex} (int). */
+    public static class KeyIndexIntPojo {
+        @KeyIndex
         public int id;
         public long score;
 
-        public IdIntPojo() {
+        public KeyIndexIntPojo() {
         }
 
-        public IdIntPojo(final int id, final long score) {
+        public KeyIndexIntPojo(final int id, final long score) {
             this.id = id;
             this.score = score;
         }
     }
 
-    /** No {@code @Id} — id-collection write must reject it. */
-    public static class NoIdPojo {
+    /** No {@code @KeyIndex} — id-collection write must reject it. */
+    public static class NoKeyIndexPojo {
         public int x;
     }
 
-    /** Two {@code @Id} fields — must be rejected. */
-    public static class DualIdPojo {
-        @Id
+    /** Two {@code @KeyIndex} fields — must be rejected. */
+    public static class DualKeyIndexPojo {
+        @KeyIndex
         public String a;
-        @Id
+        @KeyIndex
         public String b;
     }
 

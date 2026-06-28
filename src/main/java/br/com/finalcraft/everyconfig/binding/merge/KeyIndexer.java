@@ -18,24 +18,24 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Converts between a collection of {@code @Id}-bearing entities and the key-major layout the old library
+ * Converts between a collection of {@code @KeyIndex}-bearing entities and the key-major layout the old library
  * used: a map whose section names are the stringified id values and whose bodies omit the id (it would
  * just duplicate the section key). On read the section key is the SOLE authority for the id; a stray,
  * disagreeing id in the body is overridden and reported. This makes {@code read(write(coll))} reproduce
  * the id set exactly.
  */
-public final class IdIndexer {
+public final class KeyIndexer {
 
-    private IdIndexer() {
+    private KeyIndexer() {
     }
 
     public static ObjectNode toIndexed(final Collection<?> collection, final ObjectMapper mapper) {
         final ObjectNode out = mapper.getNodeFactory().objectNode();
         for (final Object entity : collection) {
-            final Field id = BindingNames.requireSingleId(entity.getClass());
+            final Field id = BindingNames.requireSingleKeyIndex(entity.getClass());
             final Object idValue = read(id, entity);
             if (idValue == null || String.valueOf(idValue).isEmpty()) {
-                throw new BindException("@Id of " + entity.getClass().getSimpleName() + " is null or empty");
+                throw new BindException("@KeyIndex of " + entity.getClass().getSimpleName() + " is null or empty");
             }
             final JsonNode body = mapper.valueToTree(entity);
             if (body instanceof ObjectNode) {
@@ -53,7 +53,7 @@ public final class IdIndexer {
         if (!(node instanceof ObjectNode)) {
             return out;
         }
-        final Field id = BindingNames.requireSingleId(type);
+        final Field id = BindingNames.requireSingleKeyIndex(type);
         final Iterator<Map.Entry<String, JsonNode>> it = node.fields();
         while (it.hasNext()) {
             final Map.Entry<String, JsonNode> e = it.next();
@@ -70,7 +70,7 @@ public final class IdIndexer {
         return out;
     }
 
-    /** The key the mapper actually emits the {@code @Id} field under, so the body strip matches it exactly. */
+    /** The key the mapper actually emits the {@code @KeyIndex} field under, so the body strip matches it exactly. */
     private static String resolvedIdKey(final Class<?> type, final Field idField,
                                         final ObjectMapper mapper) {
         final BeanDescription desc = mapper.getSerializationConfig().introspect(mapper.constructType(type));
@@ -110,7 +110,7 @@ public final class IdIndexer {
         if (idType == Boolean.class || idType == boolean.class) {
             return Boolean.valueOf(key);
         }
-        throw new BindException("cannot cast section key '" + key + "' to @Id type " + idType.getName());
+        throw new BindException("cannot cast section key '" + key + "' to @KeyIndex type " + idType.getName());
     }
 
     private static Object read(final Field f, final Object target) {
@@ -118,7 +118,7 @@ public final class IdIndexer {
             f.setAccessible(true);
             return f.get(target);
         } catch (final IllegalAccessException e) {
-            throw new BindException("cannot read @Id field " + f.getName(), e);
+            throw new BindException("cannot read @KeyIndex field " + f.getName(), e);
         }
     }
 
@@ -127,7 +127,7 @@ public final class IdIndexer {
             f.setAccessible(true);
             f.set(target, value);
         } catch (final IllegalAccessException e) {
-            throw new BindException("cannot set @Id field " + f.getName(), e);
+            throw new BindException("cannot set @KeyIndex field " + f.getName(), e);
         }
     }
 }

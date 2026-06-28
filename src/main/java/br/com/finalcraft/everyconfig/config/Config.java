@@ -6,7 +6,7 @@ import br.com.finalcraft.everyconfig.io.ConfigExecutor;
 import br.com.finalcraft.everyconfig.binding.BindOptions;
 import br.com.finalcraft.everyconfig.binding.BindResult;
 import br.com.finalcraft.everyconfig.binding.EntityBinder;
-import br.com.finalcraft.everyconfig.binding.merge.IdIndexer;
+import br.com.finalcraft.everyconfig.binding.merge.KeyIndexer;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CommentAware;
@@ -82,7 +82,7 @@ public class Config implements AutoCloseable {
     // only default-seeding, so a caller can tell "I completed an old file with new keys" apart from "a
     // value was edited". (Not serialized state — a Config is never serialized.)
     private boolean newDefaultValueToSave = false;
-    private List<LoadIssue> lastIdCollectionIssues = Collections.emptyList();
+    private List<LoadIssue> lastKeyIndexCollectionIssues = Collections.emptyList();
 
     public Config() {
         this(JsonNodeFactory.instance.objectNode(), new CommentTree(), KeyOrder.empty());
@@ -945,35 +945,38 @@ public class Config implements AutoCloseable {
         dirty = true; // the binder mutated the tree/comments directly, so flag a pending save
     }
 
-    /** Store a collection of {@code @Id}-bearing entities at {@code path} as a section keyed by their id. */
-    public void writeIdCollection(final String path, final Collection<?> collection, final Codec codec) {
+    /** Store a collection of {@code @KeyIndex}-bearing entities at {@code path} as a section keyed by the
+     *  index value. */
+    public void writeKeyIndexCollection(final String path, final Collection<?> collection, final Codec codec) {
         final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
-        setValue(path, IdIndexer.toIndexed(collection, mapper));
+        setValue(path, KeyIndexer.toIndexed(collection, mapper));
     }
 
-    /** Read an {@code @Id}-indexed section at {@code path} back into a list, restoring each id from its key. */
-    public <T> List<T> readIdCollection(final String path, final Class<T> elementType, final Codec codec) {
-        return readIdCollectionResult(path, elementType, codec).value();
+    /** Read a {@code @KeyIndex}-indexed section at {@code path} back into a list, restoring each element's
+     *  index value from its section key. */
+    public <T> List<T> readKeyIndexCollection(final String path, final Class<T> elementType, final Codec codec) {
+        return readKeyIndexCollectionResult(path, elementType, codec).value();
     }
 
     /**
-     * As {@link #readIdCollection}, but returns the list together with the {@link LoadIssue}s collected for
-     * this read (e.g. a body id disagreeing with its key), sourced from the local list so a later read does
-     * not race the result.
+     * As {@link #readKeyIndexCollection}, but returns the list together with the {@link LoadIssue}s collected
+     * for this read (e.g. a body index value disagreeing with its section key), sourced from the local list
+     * so a later read does not race the result.
      */
-    public <T> BindResult<List<T>> readIdCollectionResult(final String path, final Class<T> elementType,
-                                                          final Codec codec) {
+    public <T> BindResult<List<T>> readKeyIndexCollectionResult(final String path, final Class<T> elementType,
+                                                                final Codec codec) {
         final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
         final List<LoadIssue> issues = new ArrayList<>();
-        final List<T> out = IdIndexer.fromIndexed(getNode(path), elementType, mapper, issues);
-        this.lastIdCollectionIssues = Collections.unmodifiableList(issues);
+        final List<T> out = KeyIndexer.fromIndexed(getNode(path), elementType, mapper, issues);
+        this.lastKeyIndexCollectionIssues = Collections.unmodifiableList(issues);
         return new BindResult<>(out, issues);
     }
 
-    /** Issues recorded by the most recent {@link #readIdCollection} (e.g. a body id disagreeing with its
-     *  key); {@link #readIdCollectionResult} returns the same issues alongside the list. */
-    public List<LoadIssue> lastIdCollectionIssues() {
-        return lastIdCollectionIssues;
+    /** Issues recorded by the most recent {@link #readKeyIndexCollection} (e.g. a body index value
+     *  disagreeing with its section key); {@link #readKeyIndexCollectionResult} returns the same issues
+     *  alongside the list. */
+    public List<LoadIssue> lastKeyIndexCollectionIssues() {
+        return lastKeyIndexCollectionIssues;
     }
 
     // ==================== save-defaults bookkeeping ====================
