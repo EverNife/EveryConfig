@@ -727,55 +727,125 @@ public class Config implements AutoCloseable {
         comments.attachSubtree(newPath, movedComments);
     }
 
-    // ==================== getOrSetDefaultValue (the seeding engine) ====================
+    // ==================== getOrSetValueIfAbsent (the seeding engine) ====================
 
-    public <D> D getOrSetDefaultValue(final String path, final D def) {
+    /**
+     * Read the value at {@code path}, or — when absent — seed it with {@code def} and return {@code def}.
+     * {@code def} may be a scalar (coerced to its runtime type) or a POJO (the existing subtree is bound to
+     * the default's type, so a POJO default reads back typed rather than as a raw node).
+     */
+    public <D> D getOrSetValueIfAbsent(final String path, final D def) {
         if (!contains(path)) {
             setValue(path, def);
             newDefaultValueToSave = true;
             return def;
+        }
+        if (def != null && !isScalarDefault(def) && lifecycleCodec != null) {
+            @SuppressWarnings("unchecked")
+            final D bound = (D) getValue(path, def.getClass());
+            return bound != null ? bound : def;
         }
         final D coerced = coerceLikeDefault(resolve(path), def);
         return coerced != null ? coerced : def;
     }
 
-    public <D> D getOrSetDefaultValue(final String path, final D def, final String comment) {
-        final D value = getOrSetDefaultValue(path, def);
-        seedCommentIfAbsent(path, comment);
+    public <D> D getOrSetValueIfAbsent(final String path, final D def, final String comment) {
+        return getOrSetValueIfAbsent(path, def, comment, CommentType.BLOCK);
+    }
+
+    public <D> D getOrSetValueIfAbsent(final String path, final D def, final String comment,
+                                       final CommentType type) {
+        final D value = getOrSetValueIfAbsent(path, def);
+        seedCommentIfAbsent(path, comment, type);
         return value;
     }
 
+    /**
+     * The list at {@code path}, or — when absent — seeded with {@code def}. When present, the existing list
+     * is bound to the default's element type (inferred from the first default element), so a list of POJOs
+     * reads back typed.
+     */
     @SuppressWarnings("unchecked")
-    public <D> List<D> getOrSetDefaultValue(final String path, final List<D> def) {
+    public <D> List<D> getOrSetValueIfAbsent(final String path, final List<D> def) {
         if (!contains(path)) {
             setValue(path, def);
             newDefaultValueToSave = true;
             return def;
         }
+        if (def != null && !def.isEmpty() && lifecycleCodec != null) {
+            return getList(path, (Class<D>) def.get(0).getClass());
+        }
         return (List<D>) (List<?>) getList(path, Object.class);
     }
 
-    public <D> List<D> getOrSetDefaultValue(final String path, final List<D> def, final String comment) {
-        final List<D> value = getOrSetDefaultValue(path, def);
-        seedCommentIfAbsent(path, comment);
+    public <D> List<D> getOrSetValueIfAbsent(final String path, final List<D> def, final String comment) {
+        return getOrSetValueIfAbsent(path, def, comment, CommentType.BLOCK);
+    }
+
+    public <D> List<D> getOrSetValueIfAbsent(final String path, final List<D> def, final String comment,
+                                             final CommentType type) {
+        final List<D> value = getOrSetValueIfAbsent(path, def);
+        seedCommentIfAbsent(path, comment, type);
         return value;
     }
 
+    /**
+     * Field-level get-or-seed for a whole entity: ensures every field of {@code def} exists in the tree at
+     * {@code path} (seeding the ones the file lacks — so a field added to the POJO appears in an old file),
+     * loads the file's values onto {@code def}, and returns {@code def}. The file wins for fields it has.
+     */
+    public <D> D getOrSetValueIfAbsentInto(final String path, final D def) {
+        seedEntityFieldwise(path, def);
+        return def;
+    }
+
+    /** As {@link #getOrSetValueIfAbsentInto(String, Object)}, but the completed values land on {@code target}
+     *  (a separate instance) while {@code def} supplies the defaults to seed. */
+    public <D> D getOrSetValueIfAbsentInto(final String path, final D def, final D target) {
+        seedEntityFieldwise(path, def);
+        return getValueInto(path, target);
+    }
+
+    /** Read the file onto {@code def} (file wins where present), then write {@code def} back so the fields
+     *  the file lacked are seeded — the engine behind {@link #getOrSetValueIfAbsentInto}. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private void seedEntityFieldwise(final String path, final Object def) {
+        final EntityBinder binder = bind(def.getClass(), requireLifecycleCodec());
+        binder.readInto(path, def);
+        binder.write(path, def);
+        newDefaultValueToSave = true;
+    }
+
+    /** True for a default whose existing value is read back by scalar coercion rather than entity binding. */
+    private static boolean isScalarDefault(final Object def) {
+        return def instanceof Number || def instanceof CharSequence || def instanceof Boolean
+                || def instanceof Character || def instanceof Enum;
+    }
+
     private void seedCommentIfAbsent(final String path, final String comment) {
+        seedCommentIfAbsent(path, comment, CommentType.BLOCK);
+    }
+
+    private void seedCommentIfAbsent(final String path, final String comment, final CommentType type) {
         // A default comment: written only when the path has none yet, so a user-edited comment wins.
-        if (comment != null && comments.getComment(path, CommentType.BLOCK) == null) {
-            comments.setComment(path, comment, CommentType.BLOCK);
+        if (comment != null && comments.getComment(path, type) == null) {
+            comments.setComment(path, comment, type);
             newDefaultValueToSave = true;
             dirty = true;
         }
     }
 
-    public void setDefaultValue(final String path, final Object value) {
-        getOrSetDefaultValue(path, value);
+    public void setValueIfAbsent(final String path, final Object value) {
+        getOrSetValueIfAbsent(path, value);
     }
 
-    public void setDefaultValue(final String path, final Object value, final String comment) {
-        getOrSetDefaultValue(path, value, comment);
+    public void setValueIfAbsent(final String path, final Object value, final String comment) {
+        getOrSetValueIfAbsent(path, value, comment);
+    }
+
+    public void setValueIfAbsent(final String path, final Object value, final String comment,
+                                 final CommentType type) {
+        getOrSetValueIfAbsent(path, value, comment, type);
     }
 
     /** Re-tag an already-stored scalar to the default's runtime type, so a value held as a long reads
