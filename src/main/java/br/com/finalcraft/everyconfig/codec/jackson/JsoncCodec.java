@@ -208,7 +208,7 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
             if (val instanceof ObjectNode && val.size() > 0) {
                 emitObject((ObjectNode) val, path, indent + 1, out, comments, order);
             } else if (val instanceof ArrayNode && val.size() > 0) {
-                emitArray((ArrayNode) val, childInd, out);
+                emitArray((ArrayNode) val, path, childInd, out, comments);
             } else {
                 out.append(writeScalar(val));
             }
@@ -224,13 +224,58 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
         out.append(ind).append('}');
     }
 
-    /** Renders an array via the mapper (no per-element comments) re-indented under its key. */
-    private void emitArray(final ArrayNode arr, final String keyIndent, final StringBuilder out) {
+    /**
+     * Renders an array under its key. A scalar array carrying at least one per-element comment is rendered
+     * multi-line — one element per line, each block comment above its element, addressed as
+     * {@code path.i} — so the comment has an addressable home. Every other array (object elements, or no
+     * element comment) keeps the inline whole-array dump, byte-identical to before.
+     */
+    private void emitArray(final ArrayNode arr, final String path, final String keyIndent,
+                           final StringBuilder out, final CommentTree comments) {
+        if (allValueNodes(arr) && anyElementComment(arr, path, comments)) {
+            final String elemIndent = keyIndent + "  ";
+            out.append("[\n");
+            for (int i = 0; i < arr.size(); i++) {
+                final String block = comments.getComment(path + SEP + i, CommentType.BLOCK);
+                if (block != null) {
+                    for (final String commentLine : block.split("\n", -1)) {
+                        out.append(elemIndent).append(prefixComment(commentLine)).append('\n');
+                    }
+                }
+                out.append(elemIndent).append(dumpScalar(arr.get(i)));
+                if (i < arr.size() - 1) {
+                    out.append(',');
+                }
+                out.append('\n');
+            }
+            out.append(keyIndent).append(']');
+            return;
+        }
         final String[] lines = dumpScalar(arr).split("\n", -1);
         out.append(lines[0]); // the opening '['
         for (int i = 1; i < lines.length; i++) {
             out.append('\n').append(keyIndent).append(lines[i]);
         }
+    }
+
+    /** True when every element is a scalar (the only kind that carries a tracked per-element comment). */
+    private static boolean allValueNodes(final ArrayNode arr) {
+        for (final JsonNode e : arr) {
+            if (!e.isValueNode()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** True when any element under {@code path} (as {@code path.i}) carries a block comment. */
+    private static boolean anyElementComment(final ArrayNode arr, final String path, final CommentTree comments) {
+        for (int i = 0; i < arr.size(); i++) {
+            if (comments.getComment(path + SEP + i, CommentType.BLOCK) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Captured key order first (for keys still present), then any live keys not in the snapshot. */
@@ -272,6 +317,8 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
         final List<String> pending = new ArrayList<>();
         boolean rootSeen = false;
         int arrayDepth = 0;
+        String arrayPath = null;     // the scalar array currently being read, for element indexing
+        int arrayElementIndex = 0;
 
         for (final String raw : jsonc.split("\n", -1)) {
             final String line = raw.endsWith("\r") ? raw.substring(0, raw.length() - 1) : raw;
@@ -286,7 +333,14 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
                 continue;
             }
             if (arrayDepth > 0) {
-                arrayDepth += netBrackets(trimmed); // skip array interior; no per-element comments
+                final int before = arrayDepth;
+                arrayDepth += netBrackets(trimmed);
+                // At the array's own depth, attach a pending block comment to a SCALAR element (path.i);
+                // object/nested elements keep the whole-array path and carry no per-element comment.
+                if (before == 1 && arrayPath != null && isScalarElementLine(trimmed)) {
+                    assignElementComment(tree, arrayPath + SEP + arrayElementIndex, pending);
+                    arrayElementIndex++;
+                }
                 pending.clear();
                 continue;
             }
@@ -339,7 +393,12 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
             if (value.endsWith("{")) {
                 stack.push(key); // an object opens here
             } else {
-                arrayDepth += netBrackets(value); // > 0 only when an array opens and stays open
+                final int delta = netBrackets(value); // > 0 only when an array opens and stays open
+                arrayDepth += delta;
+                if (delta > 0) {
+                    arrayPath = path; // a multi-line array opens; index its scalar elements
+                    arrayElementIndex = 0;
+                }
             }
         }
 
@@ -348,6 +407,27 @@ public final class JsoncCodec implements Codec, ObjectMapperAware, CommentAware 
             tree.setFooter(footer);
         }
         return tree;
+    }
+
+    /** True for an array-interior line that is a scalar element (not a comment, brace/bracket, or a
+     *  {@code "key":} object-body line). */
+    private static boolean isScalarElementLine(final String trimmed) {
+        if (trimmed.isEmpty() || trimmed.startsWith("//")) {
+            return false;
+        }
+        final char c = trimmed.charAt(0);
+        if (c == '{' || c == '[' || c == '}' || c == ']') {
+            return false;
+        }
+        return keyColon(trimmed) < 0; // a scalar element has no leading "key": separator
+    }
+
+    /** Attach the drained {@code pending} lines as {@code path}'s block comment (no blank-line tracking). */
+    private void assignElementComment(final CommentTree tree, final String path, final List<String> pending) {
+        final List<String> blockLines = extractBlockLines(pending);
+        if (!blockLines.isEmpty()) {
+            tree.putFileComment(path, String.join("\n", blockLines), CommentType.BLOCK);
+        }
     }
 
     /** Drop leading/trailing blank lines, strip the {@code //} marker from each remaining line. */
