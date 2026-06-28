@@ -144,8 +144,8 @@ class TomlConfigTest extends AbstractConfigTest {
         assertFalse(text.contains("[[empty]]"), "an empty list must not become an array-of-tables");
 
         final Config r = open();
-        assertEquals(3, r.getList("nums").size());
-        assertEquals(0, r.getList("empty").size());
+        assertEquals(3, r.getList("nums", Object.class).size());
+        assertEquals(0, r.getList("empty", Object.class).size());
     }
 
     @Test

@@ -150,8 +150,8 @@ public class ConfigSection {
         return config.getStringList(concatSubPath(sub));
     }
 
-    public List<Object> getList(final String sub) {
-        return config.getList(concatSubPath(sub));
+    public <T> List<T> getList(final String sub, final Class<T> elementType) {
+        return config.getList(concatSubPath(sub), elementType);
     }
 
     public UUID getUUID(final String sub) {

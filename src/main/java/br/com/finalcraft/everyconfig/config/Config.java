@@ -479,6 +479,30 @@ public class Config implements AutoCloseable {
         return n == null ? null : coercion.unwrap(n);
     }
 
+    /**
+     * Read the value at {@code path} bound to {@code type} — a scalar ({@code Integer}, {@code String},
+     * ...) or a POJO. Lenient: a value that cannot be bound yields the type's default (often null), and an
+     * absent path yields null/the default. Runs {@code @PostLoad} for a POJO. Uses the lifecycle codec.
+     *
+     * @throws IllegalStateException if this config was not opened with a codec (e.g. {@code new Config()})
+     */
+    public <T> T getValue(final String path, final Class<T> type) {
+        return getValue(path, type, requireLifecycleCodec());
+    }
+
+    /** As {@link #getValue(String, Class)}, binding through an explicitly supplied {@code codec}. */
+    public <T> T getValue(final String path, final Class<T> type, final Codec codec) {
+        return bind(type, codec).read(path);
+    }
+
+    /** Bind the subtree at {@code path} ONTO {@code target} (overwriting only where it carries a value) and
+     *  return {@code target} — the in-place counterpart to {@link #getValue(String, Class)}. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public <T> T getValueInto(final String path, final T target) {
+        final EntityBinder binder = bind(target.getClass(), requireLifecycleCodec());
+        return (T) binder.readInto(path, target);
+    }
+
     /** The raw Jackson node at {@code path}, or null when absent — the binding layer's read entry point. */
     public JsonNode getNode(final String path) {
         return resolve(path);
@@ -543,17 +567,33 @@ public class Config implements AutoCloseable {
     }
 
     /**
-     * The list at {@code path} as plain Java values: scalars are unwrapped, but a nested object/array
-     * element stays a raw {@link JsonNode}. It NEVER returns POJOs — for typed elements use
-     * {@link #getLoadableList(String, Class)}. Null when the path is absent or not a list.
+     * The list at {@code path} bound to typed {@code elementType} instances — a scalar element type
+     * ({@code Integer}, {@code String}, ...) or a POJO. Empty (never null) when the path is absent or not
+     * a list; lenient — an element that cannot be bound to {@code elementType} is skipped. Uses the
+     * lifecycle codec.
+     *
+     * @throws IllegalStateException if this config was not opened with a codec (e.g. {@code new Config()})
      */
-    public List<Object> getList(final String path) {
-        return coercion.asList(resolve(path));
+    public <T> List<T> getList(final String path, final Class<T> elementType) {
+        return getList(path, elementType, requireLifecycleCodec());
     }
 
-    public List<Object> getList(final String path, final List<Object> def) {
-        final List<Object> l = coercion.asList(resolve(path));
-        return l != null ? l : def;
+    /** As {@link #getList(String, Class)}, binding through an explicitly supplied {@code codec}. */
+    public <T> List<T> getList(final String path, final Class<T> elementType, final Codec codec) {
+        final List<T> out = new ArrayList<>();
+        final JsonNode node = getNode(path);
+        if (!(node instanceof ArrayNode)) {
+            return out;
+        }
+        final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
+        for (final JsonNode element : node) {
+            try {
+                out.add(mapper.convertValue(element, elementType));
+            } catch (final IllegalArgumentException badElement) {
+                // lenient: skip an element that cannot be bound to elementType
+            }
+        }
+        return out;
     }
 
     public UUID getUUID(final String path) {
@@ -712,7 +752,7 @@ public class Config implements AutoCloseable {
             newDefaultValueToSave = true;
             return def;
         }
-        return (List<D>) (List<?>) getList(path);
+        return (List<D>) (List<?>) getList(path, Object.class);
     }
 
     public <D> List<D> getOrSetDefaultValue(final String path, final List<D> def, final String comment) {
@@ -776,6 +816,16 @@ public class Config implements AutoCloseable {
         return new EntityBinder<>(this, jt, codec, options);
     }
 
+    /** As {@link #bind(Class, Codec)} using the lifecycle codec this config was opened with. */
+    public <T> EntityBinder<T> bind(final Class<T> type) {
+        return bind(type, requireLifecycleCodec());
+    }
+
+    /** As {@link #bind(Class, Codec, BindOptions)} using the lifecycle codec. */
+    public <T> EntityBinder<T> bind(final Class<T> type, final BindOptions options) {
+        return bind(type, requireLifecycleCodec(), options);
+    }
+
     /** Convenience: bind the whole tree to a fresh {@code T} (runs {@code @PostLoad}). */
     public <T> T loadAs(final Class<T> type, final Codec codec) {
         return bind(type, codec).read("");
@@ -787,52 +837,6 @@ public class Config implements AutoCloseable {
      */
     public <T> BindResult<T> loadAsResult(final Class<T> type, final Codec codec) {
         return bind(type, codec).readResult("");
-    }
-
-    /**
-     * Bind the subtree at {@code path} to a fresh {@code T} — the path-scoped {@link #loadAs}, using the
-     * codec this config was opened with. An absent path binds the type's defaults; a root path
-     * ({@code ""}/{@code null}) binds the whole tree. Runs {@code @PostLoad}.
-     *
-     * @throws IllegalStateException if this config was not opened with a codec (e.g. {@code new Config()})
-     */
-    public <T> T getLoadable(final String path, final Class<T> type) {
-        return getLoadable(path, type, requireLifecycleCodec());
-    }
-
-    /** As {@link #getLoadable(String, Class)}, binding through an explicitly supplied {@code codec}. */
-    public <T> T getLoadable(final String path, final Class<T> type, final Codec codec) {
-        return bind(type, codec).read(path);
-    }
-
-    /**
-     * Bind the list at {@code path} into typed {@code elementType} instances — the typed counterpart to
-     * {@link #getList} (which yields scalars / raw {@link JsonNode}, never POJOs). An absent path or a
-     * non-array value yields an empty list; an element that cannot be bound to {@code elementType} is
-     * skipped (lenient, like the default bind). Uses the codec this config was opened with.
-     *
-     * @throws IllegalStateException if this config was not opened with a codec (e.g. {@code new Config()})
-     */
-    public <T> List<T> getLoadableList(final String path, final Class<T> elementType) {
-        return getLoadableList(path, elementType, requireLifecycleCodec());
-    }
-
-    /** As {@link #getLoadableList(String, Class)}, binding through an explicitly supplied {@code codec}. */
-    public <T> List<T> getLoadableList(final String path, final Class<T> elementType, final Codec codec) {
-        final List<T> out = new ArrayList<>();
-        final JsonNode node = getNode(path);
-        if (!(node instanceof ArrayNode)) {
-            return out; // absent or not a list -> empty
-        }
-        final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
-        for (final JsonNode element : node) {
-            try {
-                out.add(mapper.convertValue(element, elementType));
-            } catch (final IllegalArgumentException badElement) {
-                // lenient: skip an element that cannot be bound to elementType
-            }
-        }
-        return out;
     }
 
     private Codec requireLifecycleCodec() {
