@@ -289,7 +289,7 @@ List<Account> back = cfg.readKeyIndexCollection("accounts", Account.class, codec
 
 `@KeyIndex` may be `String`, a boxed/primitive numeric, `boolean` or `UUID`.
 
-**→ Deep dive: [`@KeyIndex` Collections](https://github.com/EverNife/EveryConfig/wiki/Id-Collections)**
+**→ Deep dive: [`@KeyIndex` Collections](https://github.com/EverNife/EveryConfig/wiki/KeyIndex-Collections)**
 
 ---
 
