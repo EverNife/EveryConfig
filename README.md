@@ -185,10 +185,21 @@ cfg.contains("a");                  // true
 cfg.getKeys("a");                   // direct children
 cfg.getKeys("", true);             // deep, dotted descendant paths
 cfg.getConfigSection("a.b");        // a scoped view that delegates back with the sub-path prefixed
+
+cfg.migrateKey("old.name", "new.name"); // move a key (and its comments); returns a MigrationResult
 ```
 
+> **Keys that contain a dot:** `.` separates path segments, so a key that legitimately contains one is
+> **escaped** — `cfg.getInt("rates.usd\\.brl")` addresses the single key `"usd.brl"` under `rates` (and `\\`
+> is a literal backslash). The escape is a no-op for an ordinary key, so normal paths are unaffected.
+
+> **`migrateKey` is startup-safe and observable.** It returns a `MigrationResult` so a re-run that finds the
+> data already moved (`ALREADY_MIGRATED`) is told apart from a typo'd source that never existed
+> (`SOURCE_ABSENT`) — both no-ops, but only one is worth logging.
+
 > **Legacy long-as-string tolerance:** the numeric getters parse a number stored as a quoted string, so a long
-> once written as `"1700000000000"` still reads back via `getLong`.
+> once written as `"1700000000000"` still reads back via `getLong`. `getUUID` is equally tolerant — a
+> malformed value yields `null`/the default rather than throwing.
 
 > **Trichotomy:** an absent path, an explicit `null`, and a real value are distinct — `contains` tells absent
 > from present, and a typed getter flattens an explicit `null` to its default.
@@ -295,6 +306,20 @@ cfg.onReload(() -> ...).withAutoReload(Duration.ofSeconds(2));       // poll on 
 cfg.onReload(() -> ...).withAutoReload(Duration.ofSeconds(2), true); // also catch a same-size edit (hashes content)
 cfg.close();                             // idempotent; stops the watcher
 ```
+
+**In-memory & cross-format saves.** A `Config` does not need a file at all, and it can be persisted in a
+different format than it was opened with:
+
+```java
+Config mem = Config.inMemory();      // full typed/POJO API, no file — save() throws (use a real codec to persist)
+
+cfg.save(new JsonCodec());           // one-shot: dump the tree as JSON, leaving the live codec unchanged
+cfg.changeCodec(new TomlCodec());    // switch the format used by every subsequent save
+```
+
+> `Config.inMemory()` carries a Jackson mapper, so `setValue(path, pojo)`, `getValue(path, type)` and the
+> binding annotations all work in memory; it just has nothing to write to. (A bare `new Config()` has no
+> codec at all and accepts only native values.)
 
 > **In-memory save principle.** Outside a watcher, a `Config` lives entirely in memory: `save()` dumps the
 > in-memory tree and **never reads the file first**. A hand-edit made while the app runs is overwritten on the
