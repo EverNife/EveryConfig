@@ -750,7 +750,7 @@ public class Config implements AutoCloseable {
 
     /** Convenience: bind the whole tree to a fresh {@code T} (runs {@code @PostInject}). */
     public <T> T loadAs(final Class<T> type, final Codec codec) {
-        return bind(type, codec).bind();
+        return bind(type, codec).read("");
     }
 
     /**
@@ -758,7 +758,7 @@ public class Config implements AutoCloseable {
      * — the issues a bare {@link #loadAs} discards (it drops the binder).
      */
     public <T> BindResult<T> loadAsResult(final Class<T> type, final Codec codec) {
-        return bind(type, codec).bindResult();
+        return bind(type, codec).readResult("");
     }
 
     /**
@@ -774,7 +774,7 @@ public class Config implements AutoCloseable {
 
     /** As {@link #getLoadable(String, Class)}, binding through an explicitly supplied {@code codec}. */
     public <T> T getLoadable(final String path, final Class<T> type, final Codec codec) {
-        return bind(type, codec).bindAt(path);
+        return bind(type, codec).read(path);
     }
 
     /**
@@ -819,7 +819,7 @@ public class Config implements AutoCloseable {
     @SuppressWarnings({"unchecked", "rawtypes"})
     public void mergeFrom(final Object pojo, final Codec codec) {
         final EntityBinder binder = bind(pojo.getClass(), codec);
-        binder.writeEntity(pojo);
+        binder.write("", pojo);
         dirty = true; // the binder mutated the tree/comments directly, so flag a pending save
     }
 

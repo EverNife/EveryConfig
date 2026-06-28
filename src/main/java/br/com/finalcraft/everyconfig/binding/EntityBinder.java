@@ -12,6 +12,7 @@ import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.everyconfig.config.Config;
+import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
 import com.fasterxml.jackson.databind.JavaType;
@@ -140,62 +141,81 @@ public final class EntityBinder<T> {
         return options;
     }
 
-    // ---- READ: tree -> POJO --------------------------------------------
+    // ---- READ: tree -> POJO  (path-oriented; "" / null = the whole tree) ----
 
-    /** Bind the whole current tree to a fresh instance (unknown keys ignored; missing keys keep defaults). */
-    public T bind() {
-        return doBind(constructDefault(), config.getRoot());
+    /**
+     * Bind the subtree at {@code path} ({@code ""} / {@code null} = the whole tree) to a FRESH instance.
+     * Unknown keys are ignored and missing keys keep the constructed defaults; {@code @PostInject} runs.
+     */
+    public T read(final String path) {
+        return doRead(path, constructDefault());
     }
 
-    /** Bind into an existing instance, overwriting only where the tree carries a value. */
-    public T bindInto(final T target) {
-        return doBind(target, config.getRoot());
-    }
-
-    /** Bind the subtree at {@code path} to a fresh instance. */
-    public T bindAt(final String path) {
-        JsonNode node = config.getNode(path);
-        if (node == null) {
-            node = mapper.getNodeFactory().objectNode();
-        }
-        return doBind(constructDefault(), node);
-    }
-
-    /** Re-bind from the (possibly externally changed) tree and re-run lifecycle hooks. */
-    public T reload() {
-        return bind();
+    /** As {@link #read(String)}, scoped to a {@link ConfigSection}'s path. */
+    public T read(final ConfigSection section) {
+        return read(section.getPath());
     }
 
     /**
-     * As {@link #bind()}, but returns the value together with the {@link LoadIssue}s collected for this
-     * call, so the issues travel with the value instead of having to be read afterward from the stateful
-     * {@link #lastLoadIssues()} (which a later bind would overwrite).
+     * As {@link #read(String)}, but binding ONTO {@code target} — overwriting only where the subtree
+     * carries a value — instead of constructing a fresh instance. Returns {@code target}.
      */
-    public BindResult<T> bindResult() {
-        final T v = bind();
-        return new BindResult<>(v, lastIssues);
+    public T readInto(final String path, final T target) {
+        return doRead(path, target);
     }
 
-    /** Issues from the most recent bind on this binder (empty when clean); {@link #bindResult()} returns the
-     *  same issues alongside the value. */
+    /** As {@link #readInto(String, Object)}, scoped to a {@link ConfigSection}'s path. */
+    public T readInto(final ConfigSection section, final T target) {
+        return readInto(section.getPath(), target);
+    }
+
+    /**
+     * As {@link #read(String)}, but returning the value together with the {@link LoadIssue}s collected for
+     * this call, so the issues travel with the value instead of being read afterward from the stateful
+     * {@link #lastLoadIssues()} (which a later read would overwrite).
+     */
+    public BindResult<T> readResult(final String path) {
+        return new BindResult<>(read(path), lastIssues);
+    }
+
+    /** As {@link #readResult(String)}, scoped to a {@link ConfigSection}'s path. */
+    public BindResult<T> readResult(final ConfigSection section) {
+        return readResult(section.getPath());
+    }
+
+    /** As {@link #readInto(String, Object)}, returning the value together with the collected issues. */
+    public BindResult<T> readIntoResult(final String path, final T target) {
+        return new BindResult<>(readInto(path, target), lastIssues);
+    }
+
+    /** As {@link #readIntoResult(String, Object)}, scoped to a {@link ConfigSection}'s path. */
+    public BindResult<T> readIntoResult(final ConfigSection section, final T target) {
+        return readIntoResult(section.getPath(), target);
+    }
+
+    /** Issues from the most recent read on this binder (empty when clean); the {@code *Result} variants
+     *  return the same issues alongside the value. */
     public List<LoadIssue> lastLoadIssues() {
         return lastIssues;
     }
 
-    // ---- WRITE: POJO -> tree (merge, never replace) --------------------
-
-    /**
-     * Project {@code pojo} to a tree and merge it into the canonical tree at the root. Unknown file keys,
-     * the comment overlay, and key order all survive; the POJO is the source of truth only for the keys
-     * it declares. Comments from {@code @Comment} are seeded (never written over a user edit). This
-     * mutates the in-memory tree only; persisting it is the back-store's job.
-     */
-    public void writeEntity(final T pojo) {
-        mergeAndSeed(pojo, config.getRoot(), "");
+    private T doRead(final String path, final T base) {
+        JsonNode node = config.getNode(path);
+        if (node == null) {
+            node = mapper.getNodeFactory().objectNode();
+        }
+        return doBind(base, node);
     }
 
-    /** Same as {@link #writeEntity}, scoped to the object at {@code path} (created if absent). */
-    public void writeEntityAt(final String path, final T pojo) {
+    // ---- WRITE: POJO -> tree (merge, never replace; "" / null = the root) ----
+
+    /**
+     * Project {@code pojo} to a tree and MERGE it into the canonical tree at {@code path} ({@code ""} /
+     * {@code null} = the root; an intermediate object is created if absent). Unknown file keys, the comment
+     * overlay and key order all survive; the POJO is the source of truth only for the keys it declares, and
+     * {@code @Comment}s are seeded (never written over a user edit). Mutates the in-memory tree only.
+     */
+    public void write(final String path, final T pojo) {
         final JsonNode existing = config.getNode(path);
         final ObjectNode target;
         if (existing instanceof ObjectNode) {
@@ -204,7 +224,12 @@ public final class EntityBinder<T> {
             target = mapper.getNodeFactory().objectNode();
             config.setValue(path, target);
         }
-        mergeAndSeed(pojo, target, path);
+        mergeAndSeed(pojo, target, path == null ? "" : path);
+    }
+
+    /** As {@link #write(String, Object)}, scoped to a {@link ConfigSection}'s path. */
+    public void write(final ConfigSection section, final T pojo) {
+        write(section.getPath(), pojo);
     }
 
     private void mergeAndSeed(final T pojo, final ObjectNode target, final String basePath) {

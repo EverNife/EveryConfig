@@ -99,13 +99,13 @@ class EntityBinderWriteTest {
     @Test
     void obsoleteKeyPreservedByDefaultRemovedOnlyUnderRemove() {
         final Config preserve = configFrom("{\"maxPool\":1,\"obsoleteKey\":true}");
-        preserve.bind(Db.class, json).writeEntity(new Db());
+        preserve.bind(Db.class, json).write("", new Db());
         assertTrue(preserve.contains("obsoleteKey")); // PRESERVE default keeps it
 
         final Config remove = configFrom("{\"maxPool\":1,\"obsoleteKey\":true}");
         remove.bind(Db.class, json,
                 BindOptions.defaults().withObsoletePolicy(BindOptions.ObsoletePolicy.REMOVE))
-                .writeEntity(new Db());
+                .write("", new Db());
         assertFalse(remove.contains("obsoleteKey")); // REMOVE strips the undeclared key
         assertEquals(10, remove.getInt("maxPool"));   // declared key kept
     }
@@ -138,7 +138,7 @@ class EntityBinderWriteTest {
         // Even under REMOVE, 'b' is a user map entry under an OPEN node and must survive.
         c.bind(WithMap.class, json,
                 BindOptions.defaults().withObsoletePolicy(BindOptions.ObsoletePolicy.REMOVE))
-                .writeEntity(w);
+                .write("", w);
 
         assertEquals(9, c.getInt("limits.a")); // overwritten by the POJO
         assertTrue(c.contains("limits.b"));    // preserved: the map is open
