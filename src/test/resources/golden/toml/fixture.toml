@@ -1,0 +1,12 @@
+# EveryConfig golden fixture
+# locks the emitted layout
+
+# the display name
+name = 'demo'
+
+tags = ['alpha', 'beta', 'gamma']
+[server]
+host = 'localhost'
+port = 25565 # listen port
+
+# end of fixture

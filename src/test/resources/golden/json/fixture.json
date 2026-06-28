@@ -1,0 +1,8 @@
+{
+  "name" : "demo",
+  "server" : {
+    "host" : "localhost",
+    "port" : 25565
+  },
+  "tags" : [ "alpha", "beta", "gamma" ]
+}

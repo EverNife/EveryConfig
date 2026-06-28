@@ -5,6 +5,10 @@ import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.jackson.JsonCodec;
 import br.com.finalcraft.everyconfig.config.modules.AbstractConfigTest;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
 
 /** The config contract over the JSON codec (fidelity NONE: comment tests are skipped, data must survive). */
 @DisplayName("JsonConfig (fidelity=NONE, comments stripped)")
@@ -28,5 +32,12 @@ class JsonConfigTest extends AbstractConfigTest {
     @Override
     protected String malformedText() {
         return "{ \"a\": ";
+    }
+
+    @Test
+    @Order(320)
+    @DisplayName("[json] the emitted layout matches the golden fixture byte-for-byte (no comments)")
+    void goldenLayout_byteStable() throws IOException {
+        assertGoldenLayout();
     }
 }
