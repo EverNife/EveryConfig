@@ -133,17 +133,28 @@ public class Config implements AutoCloseable {
     // ==================== navigation ====================
 
     /** Read navigation: returns null when absent; a stored NullNode is returned as-is, because a
-     *  present-but-null value is distinct from an absent path. */
+     *  present-but-null value is distinct from an absent path. Bracket segments ({@code list[0]},
+     *  {@code list[-1]}) force array-element semantics; a dotted numeric segment ({@code list.0}) stays
+     *  ambiguous and is resolved against the live node's type, as before. */
     private JsonNode resolve(final String path) {
         JsonNode cur = root;
-        for (final String seg : DPath.split(path, sep())) {
-            if (cur instanceof ObjectNode) {
-                if (!((ObjectNode) cur).has(seg)) {
+        for (final DPath.Seg seg : DPath.parse(path, sep())) {
+            if (seg.index) {
+                if (!(cur instanceof ArrayNode)) {
+                    return null; // [n] only addresses an array element
+                }
+                final int idx = arrayIndex((ArrayNode) cur, seg.indexValue);
+                if (idx < 0) {
+                    return null; // out of bounds (incl. a too-large negative)
+                }
+                cur = cur.get(idx);
+            } else if (cur instanceof ObjectNode) {
+                if (!((ObjectNode) cur).has(seg.key)) {
                     return null;
                 }
-                cur = cur.get(seg);
-            } else if (cur instanceof ArrayNode && DPath.isIndex(seg)) {
-                cur = cur.get(Integer.parseInt(seg));
+                cur = cur.get(seg.key);
+            } else if (cur instanceof ArrayNode && DPath.isIndex(seg.key)) {
+                cur = cur.get(Integer.parseInt(seg.key));
                 if (cur == null) {
                     return null;
                 }
@@ -155,6 +166,12 @@ public class Config implements AutoCloseable {
             }
         }
         return cur;
+    }
+
+    /** Normalize a possibly-negative bracket index against {@code arr}'s size; -1 when out of bounds. */
+    private static int arrayIndex(final ArrayNode arr, final int raw) {
+        final int idx = raw < 0 ? raw + arr.size() : raw;
+        return (idx < 0 || idx >= arr.size()) ? -1 : idx;
     }
 
     private static final class ParentAndKey {
@@ -210,6 +227,10 @@ public class Config implements AutoCloseable {
             removeValue(path);
             return;
         }
+        if (DPath.hasBracket(path)) {
+            setValueBracketed(path, node);
+            return;
+        }
         final ParentAndKey pk = vivify(path);
         final JsonNode existing = pk.parent.get(pk.key);
         if (existing != null && existing.isContainerNode()) {
@@ -217,6 +238,121 @@ public class Config implements AutoCloseable {
         }
         pk.parent.set(pk.key, node);
         dirty = true;
+    }
+
+    /**
+     * Bracket-path write: set the leaf addressed by a path that uses {@code [n]} grammar. Intermediate
+     * objects are minted as on the dotted path, but an array is never grown — a bracket index must
+     * address an element that already exists (negative counts from the end). Out-of-bounds or a bracket
+     * index into a non-array throws, mirroring the "{@code vivify} never grows an array" invariant.
+     */
+    private void setValueBracketed(final String path, final JsonNode node) {
+        final List<DPath.Seg> segs = DPath.parse(path, sep());
+        final StringBuilder parentDotted = new StringBuilder();
+        final JsonNode parent = walkToParent(segs, true, parentDotted, path);
+        final DPath.Seg last = segs.get(segs.size() - 1);
+        if (last.index) {
+            final ArrayNode arr = requireArray(parent, path);
+            final int idx = arrayIndex(arr, last.indexValue);
+            if (idx < 0) {
+                throw new IllegalArgumentException("array index out of bounds (no growth) for '" + path + "'");
+            }
+            dropReplacedComments(arr.get(idx), parentDotted, String.valueOf(idx));
+            arr.set(idx, node);
+        } else if (parent instanceof ArrayNode && DPath.isIndex(last.key)) {
+            final ArrayNode arr = (ArrayNode) parent;
+            final int idx = Integer.parseInt(last.key);
+            if (idx < 0 || idx >= arr.size()) {
+                throw new IllegalArgumentException("array index out of bounds (no growth) for '" + path + "'");
+            }
+            dropReplacedComments(arr.get(idx), parentDotted, last.key);
+            arr.set(idx, node);
+        } else if (parent instanceof ObjectNode) {
+            final ObjectNode obj = (ObjectNode) parent;
+            dropReplacedComments(obj.get(last.key), parentDotted, last.key);
+            obj.set(last.key, node);
+        } else {
+            throw new IllegalArgumentException("cannot set '" + path + "': its parent is not a container");
+        }
+        dirty = true;
+    }
+
+    /** Drop a replaced container's comment subtree, keyed by the parent's dotted path plus this leaf. */
+    private void dropReplacedComments(final JsonNode existing, final StringBuilder parentDotted, final String leaf) {
+        if (existing != null && existing.isContainerNode()) {
+            final String dotted = parentDotted.length() == 0 ? leaf : parentDotted + String.valueOf(sep()) + leaf;
+            comments.removeSubtree(dotted);
+        }
+    }
+
+    private static ArrayNode requireArray(final JsonNode parent, final String path) {
+        if (!(parent instanceof ArrayNode)) {
+            throw new IllegalArgumentException("bracket index into a non-array for '" + path + "'");
+        }
+        return (ArrayNode) parent;
+    }
+
+    /**
+     * Walk every segment but the last, returning the container that holds the leaf. Descends into
+     * existing arrays for bracket/numeric segments and, when {@code create}, mints intermediate objects
+     * for missing keys; {@code dotted} is filled with the parent's normalized dotted path (for comment
+     * keying). A non-create walk returns null when a segment is absent or type-incompatible.
+     */
+    private JsonNode walkToParent(final List<DPath.Seg> segs, final boolean create,
+                                  final StringBuilder dotted, final String path) {
+        JsonNode cur = root;
+        for (int i = 0; i < segs.size() - 1; i++) {
+            final DPath.Seg seg = segs.get(i);
+            if (seg.index) {
+                final ArrayNode arr = (cur instanceof ArrayNode) ? (ArrayNode) cur : null;
+                final int idx = arr == null ? -1 : arrayIndex(arr, seg.indexValue);
+                if (idx < 0) {
+                    if (create) {
+                        throw new IllegalArgumentException("cannot descend through '" + path + "'");
+                    }
+                    return null;
+                }
+                appendDotted(dotted, String.valueOf(idx));
+                cur = arr.get(idx);
+            } else if (cur instanceof ArrayNode && DPath.isIndex(seg.key)) {
+                final JsonNode el = cur.get(Integer.parseInt(seg.key));
+                if (el == null) {
+                    if (create) {
+                        throw new IllegalArgumentException("cannot descend through '" + path + "'");
+                    }
+                    return null;
+                }
+                appendDotted(dotted, seg.key);
+                cur = el;
+            } else if (cur instanceof ObjectNode) {
+                final ObjectNode obj = (ObjectNode) cur;
+                appendDotted(dotted, seg.key);
+                final JsonNode next = obj.get(seg.key);
+                if (next instanceof ObjectNode || next instanceof ArrayNode) {
+                    cur = next;
+                } else if (create) {
+                    final ObjectNode created = nodes.objectNode();
+                    obj.set(seg.key, created);
+                    comments.removeSubtree(dotted.toString()); // a replaced scalar's comments no longer apply
+                    cur = created;
+                } else {
+                    return null;
+                }
+            } else {
+                if (create) {
+                    throw new IllegalArgumentException("cannot descend into a scalar at '" + path + "'");
+                }
+                return null;
+            }
+        }
+        return cur;
+    }
+
+    private void appendDotted(final StringBuilder dotted, final String seg) {
+        if (dotted.length() > 0) {
+            dotted.append(sep());
+        }
+        dotted.append(seg);
     }
 
     public void setValue(final String path, final Object value, final String comment) {
@@ -248,6 +384,9 @@ public class Config implements AutoCloseable {
             comments.removeSubtree("");
             return true;
         }
+        if (DPath.hasBracket(path)) {
+            return removeValueBracketed(path);
+        }
         final JsonNode parent = resolve(DPath.parent(path, sep()));
         final String leaf = DPath.leaf(path, sep());
         boolean removed = false;
@@ -259,6 +398,47 @@ public class Config implements AutoCloseable {
         }
         if (removed) {
             comments.removeSubtree(path);
+            dirty = true;
+        }
+        return removed;
+    }
+
+    /** Bracket-path remove: drop the element/key addressed by a path that uses {@code [n]} grammar. */
+    private boolean removeValueBracketed(final String path) {
+        final List<DPath.Seg> segs = DPath.parse(path, sep());
+        final StringBuilder parentDotted = new StringBuilder();
+        final JsonNode parent = walkToParent(segs, false, parentDotted, path);
+        if (parent == null) {
+            return false;
+        }
+        final DPath.Seg last = segs.get(segs.size() - 1);
+        boolean removed = false;
+        String leafDotted = null;
+        if (last.index) {
+            if (parent instanceof ArrayNode) {
+                final ArrayNode arr = (ArrayNode) parent;
+                final int idx = arrayIndex(arr, last.indexValue);
+                if (idx >= 0) {
+                    arr.remove(idx);
+                    leafDotted = String.valueOf(idx);
+                    removed = true;
+                }
+            }
+        } else if (parent instanceof ObjectNode) {
+            removed = ((ObjectNode) parent).remove(last.key) != null;
+            leafDotted = last.key;
+        } else if (parent instanceof ArrayNode && DPath.isIndex(last.key)) {
+            final int idx = Integer.parseInt(last.key);
+            if (idx >= 0 && idx < ((ArrayNode) parent).size()) {
+                ((ArrayNode) parent).remove(idx);
+                leafDotted = last.key;
+                removed = true;
+            }
+        }
+        if (removed) {
+            final String dotted = parentDotted.length() == 0
+                    ? leafDotted : parentDotted + String.valueOf(sep()) + leafDotted;
+            comments.removeSubtree(dotted);
             dirty = true;
         }
         return removed;
