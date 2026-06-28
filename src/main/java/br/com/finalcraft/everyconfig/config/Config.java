@@ -444,11 +444,6 @@ public class Config implements AutoCloseable {
         return removed;
     }
 
-    /** Alias for {@link #removeValue(String)} (for callers that prefer a {@code clear} idiom). */
-    public boolean clear(final String path) {
-        return removeValue(path);
-    }
-
     // ==================== get ====================
 
     public Object getValue(final String path) {
@@ -519,6 +514,11 @@ public class Config implements AutoCloseable {
         return l != null ? l : def;
     }
 
+    /**
+     * The list at {@code path} as plain Java values: scalars are unwrapped, but a nested object/array
+     * element stays a raw {@link JsonNode}. It NEVER returns POJOs — for typed elements use
+     * {@link #getLoadableList(String, Class)}. Null when the path is absent or not a list.
+     */
     public List<Object> getList(final String path) {
         return coercion.asList(resolve(path));
     }
@@ -589,15 +589,10 @@ public class Config implements AutoCloseable {
         }
     }
 
-    /** Always returns a (possibly empty) section view (old {@code getConfigSection} contract). */
+    /** A section view scoped at {@code path}; always non-null (a cursor, even when the path is absent).
+     *  To test existence, use {@link #contains(String)} instead. */
     public ConfigSection getConfigSection(final String path) {
         return new ConfigSection(this, path);
-    }
-
-    /** Returns a section view, or null when the path is absent or not an object (old contract). */
-    public ConfigSection getConfigurationSection(final String path) {
-        final JsonNode n = resolve(path);
-        return (n instanceof ObjectNode) ? new ConfigSection(this, path) : null;
     }
 
     public Set<ConfigSection> getKeysSections() {
@@ -780,6 +775,36 @@ public class Config implements AutoCloseable {
     /** As {@link #getLoadable(String, Class)}, binding through an explicitly supplied {@code codec}. */
     public <T> T getLoadable(final String path, final Class<T> type, final Codec codec) {
         return bind(type, codec).bindAt(path);
+    }
+
+    /**
+     * Bind the list at {@code path} into typed {@code elementType} instances — the typed counterpart to
+     * {@link #getList} (which yields scalars / raw {@link JsonNode}, never POJOs). An absent path or a
+     * non-array value yields an empty list; an element that cannot be bound to {@code elementType} is
+     * skipped (lenient, like the default bind). Uses the codec this config was opened with.
+     *
+     * @throws IllegalStateException if this config was not opened with a codec (e.g. {@code new Config()})
+     */
+    public <T> List<T> getLoadableList(final String path, final Class<T> elementType) {
+        return getLoadableList(path, elementType, requireLifecycleCodec());
+    }
+
+    /** As {@link #getLoadableList(String, Class)}, binding through an explicitly supplied {@code codec}. */
+    public <T> List<T> getLoadableList(final String path, final Class<T> elementType, final Codec codec) {
+        final List<T> out = new ArrayList<>();
+        final JsonNode node = getNode(path);
+        if (!(node instanceof ArrayNode)) {
+            return out; // absent or not a list -> empty
+        }
+        final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
+        for (final JsonNode element : node) {
+            try {
+                out.add(mapper.convertValue(element, elementType));
+            } catch (final IllegalArgumentException badElement) {
+                // lenient: skip an element that cannot be bound to elementType
+            }
+        }
+        return out;
     }
 
     private Codec requireLifecycleCodec() {
