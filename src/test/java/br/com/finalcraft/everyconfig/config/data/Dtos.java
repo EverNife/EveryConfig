@@ -5,7 +5,7 @@ import br.com.finalcraft.everyconfig.annotation.CommentMode;
 import br.com.finalcraft.everyconfig.annotation.Id;
 import br.com.finalcraft.everyconfig.annotation.Key;
 import br.com.finalcraft.everyconfig.annotation.KeyTransformCase;
-import br.com.finalcraft.everyconfig.annotation.PostInject;
+import br.com.finalcraft.everyconfig.annotation.PostLoad;
 import br.com.finalcraft.everyconfig.annotation.Section;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.binding.LoadIssueAware;
@@ -270,55 +270,55 @@ public final class Dtos {
         public String b;
     }
 
-    // ----- @PostInject -----
+    // ----- @PostLoad -----
 
-    /** No-arg {@code @PostInject}. */
-    public static class PostInjectPojo {
+    /** No-arg {@code @PostLoad}. */
+    public static class PostLoadPojo {
         public int port = 1;
         public String name = "def";
         public boolean enabled = true;
         public transient boolean initialized = false;
 
-        @PostInject
+        @PostLoad
         void init() {
             initialized = true;
         }
     }
 
-    /** {@code @PostInject} receiving the {@code List<LoadIssue>}. */
-    public static class PostInjectIssuesPojo {
+    /** {@code @PostLoad} receiving the {@code List<LoadIssue>}. */
+    public static class PostLoadIssuesPojo {
         public int port = 1;
         public transient List<LoadIssue> seen;
 
-        @PostInject
+        @PostLoad
         void check(final List<LoadIssue> issues) {
             seen = issues;
         }
     }
 
-    /** A {@code @PostInject} that throws — binding must surface it as a {@code BindException}. */
-    public static class PostInjectThrowsPojo {
+    /** A {@code @PostLoad} that throws — binding must surface it as a {@code BindException}. */
+    public static class PostLoadThrowsPojo {
         public int port = 1;
 
-        @PostInject
+        @PostLoad
         void boom() {
             throw new IllegalStateException("post-inject failure");
         }
     }
 
-    /** Inherited {@code @PostInject}: an overridden hook must run once (de-duped by method name). */
-    public static class InheritedPostInjectBase {
+    /** Inherited {@code @PostLoad}: an overridden hook must run once (de-duped by method name). */
+    public static class InheritedPostLoadBase {
         public transient int hookCalls = 0;
 
-        @PostInject
+        @PostLoad
         void hook() {
             hookCalls++;
         }
     }
 
-    public static class InheritedPostInjectSub extends InheritedPostInjectBase {
+    public static class InheritedPostLoadSub extends InheritedPostLoadBase {
         @Override
-        @PostInject
+        @PostLoad
         void hook() {
             hookCalls++;
         }
