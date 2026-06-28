@@ -10,6 +10,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 
 /**
@@ -216,6 +217,26 @@ public final class NodeCoercion {
             }
             if (s.equalsIgnoreCase("false")) {
                 return Boolean.FALSE;
+            }
+        }
+        return null;
+    }
+
+    /** Textual UUID → UUID; absent / non-text / malformed → null (never throws), so {@code getUUID(path)}
+     *  and {@code getUUID(path, def)} fail the same tolerant way the numeric getters do. */
+    public UUID asUuid(final JsonNode n) {
+        if (isAbsentish(n)) {
+            return null;
+        }
+        if (n.isTextual()) {
+            final String s = n.textValue().trim();
+            if (s.isEmpty()) {
+                return null;
+            }
+            try {
+                return UUID.fromString(s);
+            } catch (final IllegalArgumentException e) {
+                return null;
             }
         }
         return null;
