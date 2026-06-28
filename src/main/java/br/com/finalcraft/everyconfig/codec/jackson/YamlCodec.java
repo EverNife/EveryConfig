@@ -337,10 +337,40 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
         boolean firstKeySeen = false;
         String currentArrayPath = null; // the scalar sequence currently being read, for element indexing
         int arrayElementIndex = 0;
+        int blockScalarKeyIndent = -1;  // >= 0 while inside a literal/folded block scalar (its key's indent)
+        int flowDepth = 0;              // > 0 while inside an open flow collection ([ ]/{ }) across lines
+        String flowOwnerPath = null;    // the key a multi-line flow belongs to (for its closing-line comment)
 
         for (final String raw : yaml.split("\n", -1)) {
             final String line = raw.endsWith("\r") ? raw.substring(0, raw.length() - 1) : raw;
             final String trimmed = line.trim();
+
+            // Inside a block scalar (| or >), every more-indented line (and any blank line) is literal text:
+            // a '#' or a 'key:' there is content, not a comment or a key. The block ends at the first
+            // non-blank line indented no deeper than the block's key.
+            if (blockScalarKeyIndent >= 0) {
+                if (trimmed.isEmpty() || leadingSpaces(line) > blockScalarKeyIndent) {
+                    continue;
+                }
+                blockScalarKeyIndent = -1; // dedented: the block ended; fall through to process this line
+            }
+
+            // Inside a multi-line flow collection ([ ]/{ }), the interior lines are not keys. When it closes,
+            // a trailing comment on the closing line belongs to the key that opened the flow.
+            if (flowDepth > 0) {
+                flowDepth += netBracketsYaml(trimmed);
+                if (flowDepth <= 0) {
+                    flowDepth = 0;
+                    final int closeHash = sideHash(trimmed);
+                    if (closeHash >= 0 && flowOwnerPath != null) {
+                        tree.putFileComment(flowOwnerPath, stripComment(trimmed.substring(closeHash).trim()),
+                                CommentType.SIDE);
+                    }
+                    flowOwnerPath = null;
+                }
+                pending.clear();
+                continue;
+            }
 
             if (trimmed.isEmpty()) {
                 pending.add("");
@@ -369,6 +399,11 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
 
             final int colon = keyColon(trimmed);
             if (colon < 0) {
+                // A bare block-scalar header on its own line (the emitter's multi-line form: "key:" then an
+                // indented "|") opens a block whose following, more-indented lines are literal text.
+                if (isBlockScalarIndicator(trimmed)) {
+                    blockScalarKeyIndent = leadingSpaces(line);
+                }
                 pending.clear();
                 continue;
             }
@@ -410,6 +445,19 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
             final int hash = sideHash(afterColon);
             if (hash >= 0) {
                 tree.putFileComment(path, stripComment(afterColon.substring(hash).trim()), CommentType.SIDE);
+            }
+
+            // A value that opens a block scalar (| / >) or a multi-line flow collection switches the parser
+            // into the matching skip-mode, so the lines that follow are not mis-read as keys or comments.
+            final String valuePart = (hash >= 0) ? afterColon.substring(0, hash) : afterColon;
+            if (isBlockScalarIndicator(valuePart.trim())) {
+                blockScalarKeyIndent = indent;
+            } else {
+                final int net = netBracketsYaml(valuePart);
+                if (net > 0) {
+                    flowDepth = net;
+                    flowOwnerPath = path;
+                }
             }
         }
 
@@ -531,6 +579,48 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
             }
         }
         return -1;
+    }
+
+    /** True when {@code s} is a YAML block-scalar header by itself ({@code |} or {@code >} plus optional
+     *  chomping/indent indicators), so the lines that follow it are literal text, not keys or comments. */
+    private static boolean isBlockScalarIndicator(final String s) {
+        if (s.isEmpty()) {
+            return false;
+        }
+        final char first = s.charAt(0);
+        if (first != '|' && first != '>') {
+            return false;
+        }
+        for (int i = 1; i < s.length(); i++) {
+            final char c = s.charAt(i);
+            if (c != '-' && c != '+' && !Character.isDigit(c)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Net opening minus closing flow brackets ({@code [ { } ]}) outside quotes — tracks an open flow
+     *  collection across lines (a wrapped flow map/sequence stays open until the brackets balance). */
+    private static int netBracketsYaml(final String s) {
+        int depth = 0;
+        boolean inSingle = false;
+        boolean inDouble = false;
+        for (int i = 0; i < s.length(); i++) {
+            final char c = s.charAt(i);
+            if (c == '\'' && !inDouble) {
+                inSingle = !inSingle;
+            } else if (c == '"' && !inSingle) {
+                inDouble = !inDouble;
+            } else if (!inSingle && !inDouble) {
+                if (c == '[' || c == '{') {
+                    depth++;
+                } else if (c == ']' || c == '}') {
+                    depth--;
+                }
+            }
+        }
+        return depth;
     }
 
     /** First {@code '#'} starting a side comment (preceded by a space, not inside quotes), or -1. */
