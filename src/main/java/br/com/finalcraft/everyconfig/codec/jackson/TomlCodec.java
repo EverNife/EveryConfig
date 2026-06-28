@@ -9,6 +9,7 @@ import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
+import br.com.finalcraft.everyconfig.core.tree.DPath;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -190,7 +191,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
         }
 
         for (final String key : scalars) {
-            final String p = path.isEmpty() ? key : path + SEP + key;
+            final String p = DPath.joinSegment(path, key, SEP);
             emitLeadingComments(p, out, comments);
             out.append(keyToken(key)).append(" = ").append(writeScalar(node.get(key)));
             final String side = comments.getComment(p, CommentType.SIDE);
@@ -201,7 +202,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
         }
 
         for (final String key : subSections) {
-            final String p = path.isEmpty() ? key : path + SEP + key;
+            final String p = DPath.joinSegment(path, key, SEP);
             final JsonNode v = node.get(key);
             emitLeadingComments(p, out, comments);
             if (v.isObject()) {
@@ -346,7 +347,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
                 continue;
             }
             final String key = unquote(trimmed.substring(0, eq).trim());
-            final String path = currentTable.isEmpty() ? key : currentTable + SEP + key;
+            final String path = DPath.joinSegment(currentTable, key, SEP);
             assignComments(tree, path, peelHeaderIfFirst(tree, pending, firstSeen));
             firstSeen = true;
             pending.clear();
@@ -433,9 +434,12 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
         return dumpInline(mapper.getNodeFactory().textNode(key));
     }
 
-    /** A dotted table path with each segment bare-or-quoted, e.g. {@code database.pool}. */
+    /** The escaped internal path (e.g. {@code database.pool}, or {@code a\.b} for a dotted key) rendered as
+     *  a TOML dotted header with each LITERAL segment bare-or-quoted, e.g. {@code database.pool} or
+     *  {@code "a.b"}. The escape and the TOML quoting are separate layers: a dot inside a key is unescaped
+     *  here and the segment is then quoted by TOML. */
     private String tablePath(final String internalPath) {
-        final String[] segments = internalPath.split("\\.");
+        final String[] segments = DPath.split(internalPath, SEP); // literal segments (escapes resolved)
         final StringBuilder sb = new StringBuilder();
         for (int i = 0; i < segments.length; i++) {
             if (i > 0) {
@@ -446,7 +450,8 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
         return sb.toString();
     }
 
-    /** Parse a {@code [a.b."c d"]} header's inner text back into a dotted internal path. */
+    /** Parse a {@code [a.b."c.d"]} header's inner text back into the escaped internal path: each TOML
+     *  segment (quoted or bare) becomes one literal key, re-escaped so a dot inside it stays part of it. */
     private static String tablePathToInternal(final String inner) {
         final List<String> segments = new ArrayList<>();
         final StringBuilder cur = new StringBuilder();
@@ -471,7 +476,11 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
             }
         }
         segments.add(cur.toString().trim());
-        return String.join(".", segments);
+        String path = "";
+        for (final String seg : segments) {
+            path = DPath.joinSegment(path, seg, SEP);
+        }
+        return path;
     }
 
     private static boolean isBareKey(final String key) {

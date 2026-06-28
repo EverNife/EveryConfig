@@ -201,7 +201,7 @@ public class Config implements AutoCloseable {
             if (prefix.length() > 0) {
                 prefix.append(sep());
             }
-            prefix.append(segs[i]);
+            prefix.append(DPath.escapeSegment(segs[i], sep())); // a dot inside the key stays escaped in the path key
             final JsonNode next = cur.get(segs[i]);
             if (next instanceof ObjectNode) {
                 cur = (ObjectNode) next;
@@ -312,7 +312,8 @@ public class Config implements AutoCloseable {
     /** Drop a replaced container's comment subtree, keyed by the parent's dotted path plus this leaf. */
     private void dropReplacedComments(final JsonNode existing, final StringBuilder parentDotted, final String leaf) {
         if (existing != null && existing.isContainerNode()) {
-            final String dotted = parentDotted.length() == 0 ? leaf : parentDotted + String.valueOf(sep()) + leaf;
+            final String escLeaf = DPath.escapeSegment(leaf, sep());
+            final String dotted = parentDotted.length() == 0 ? escLeaf : parentDotted + String.valueOf(sep()) + escLeaf;
             comments.removeSubtree(dotted);
         }
     }
@@ -384,7 +385,7 @@ public class Config implements AutoCloseable {
         if (dotted.length() > 0) {
             dotted.append(sep());
         }
-        dotted.append(seg);
+        dotted.append(DPath.escapeSegment(seg, sep()));
     }
 
     public void setValue(final String path, final Object value, final String comment) {
@@ -650,7 +651,7 @@ public class Config implements AutoCloseable {
         final Iterator<Map.Entry<String, JsonNode>> it = node.fields();
         while (it.hasNext()) {
             final Map.Entry<String, JsonNode> e = it.next();
-            final String p = prefix.isEmpty() ? e.getKey() : prefix + sep() + e.getKey();
+            final String p = DPath.joinSegment(prefix, e.getKey(), sep());
             out.add(p);
             if (e.getValue() instanceof ObjectNode) {
                 collectDeep((ObjectNode) e.getValue(), p, out);
@@ -671,7 +672,7 @@ public class Config implements AutoCloseable {
     public Set<ConfigSection> getKeysSections(final String path) {
         final Set<ConfigSection> out = new LinkedHashSet<>();
         for (final String k : getKeys(path)) {
-            out.add(new ConfigSection(this, DPath.join(path, k, sep())));
+            out.add(new ConfigSection(this, DPath.joinSegment(path, k, sep())));
         }
         return out;
     }

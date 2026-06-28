@@ -3,6 +3,7 @@ import br.com.finalcraft.everyconfig.binding.BindOptions;
 import br.com.finalcraft.everyconfig.binding.schema.Schema;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
+import br.com.finalcraft.everyconfig.core.tree.DPath;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -80,6 +81,6 @@ public final class SmartMerge {
     }
 
     private static String childPath(final String prefix, final String key, final char sep) {
-        return prefix.isEmpty() ? key : prefix + sep + key;
+        return DPath.joinSegment(prefix, key, sep);
     }
 }
