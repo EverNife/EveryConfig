@@ -2,7 +2,7 @@ package br.com.finalcraft.everyconfig.config;
 
 import br.com.finalcraft.everyconfig.io.AtomicFileBackStore;
 import br.com.finalcraft.everyconfig.io.BackStore;
-import br.com.finalcraft.everyconfig.io.ConfigExecutor;
+import br.com.finalcraft.everyconfig.io.ConfigExecutors;
 import br.com.finalcraft.everyconfig.binding.BindOptions;
 import br.com.finalcraft.everyconfig.binding.BindResult;
 import br.com.finalcraft.everyconfig.binding.EntityBinder;
@@ -13,7 +13,6 @@ import br.com.finalcraft.everyconfig.codec.CommentAware;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.CodecException;
 import br.com.finalcraft.everyconfig.codec.CodecRegistry;
-import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.everyconfig.codec.jackson.InMemoryCodec;
 import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
@@ -21,7 +20,6 @@ import br.com.finalcraft.everyconfig.core.coerce.NodeCoercion;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
 import br.com.finalcraft.everyconfig.core.tree.DPath;
-import br.com.finalcraft.everyconfig.core.tree.PathOptions;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -64,13 +62,12 @@ public class Config implements AutoCloseable {
     private CommentTree comments;
     private KeyOrder fileKeyOrder;
     private final JsonNodeFactory nodes;
-    private final PathOptions pathOptions;
     private final NodeCoercion coercion;
 
     // ---- lifecycle (null for an in-memory Config not opened over a file) ----
     private final ReentrantLock lock = new ReentrantLock(true);
     private BackStore backStore;
-    private Codec lifecycleCodec;
+    private Codec codec;
     private volatile BackStore.Fingerprint loaded = BackStore.Fingerprint.ABSENT;
     private volatile LoadStatus lastLoadStatus = LoadStatus.NEVER_LOADED;
     private boolean dirty = false;
@@ -100,7 +97,6 @@ public class Config implements AutoCloseable {
         this.comments = comments != null ? comments : new CommentTree();
         this.fileKeyOrder = fileKeyOrder != null ? fileKeyOrder : KeyOrder.empty();
         this.nodes = JsonNodeFactory.instance;
-        this.pathOptions = PathOptions.DEFAULT;
         this.coercion = new NodeCoercion(this.nodes);
     }
 
@@ -123,17 +119,23 @@ public class Config implements AutoCloseable {
         return coercion;
     }
 
-    private char sep() {
-        return pathOptions.separator();
+    /**
+     * The codec this Config binds and persists with, or {@code null} for a bare {@code new Config()} that
+     * was never given one. {@link #open} sets a file codec, {@link #inMemory()} sets {@code InMemoryCodec},
+     * and {@link #changeCodec(Codec)} swaps it.
+     */
+    public Codec getCodec() {
+        return codec;
     }
 
+    /** The path separator for the dynamic API: always {@link DPath#SEP}. */
     public char pathSeparator() {
-        return pathOptions.separator();
+        return DPath.SEP;
     }
 
     /** Join a base path with a sub-path using this config's separator (used by {@link ConfigSection}). */
     public String concat(final String base, final String sub) {
-        return DPath.join(base, sub, sep());
+        return DPath.join(base, sub);
     }
 
     // ==================== navigation ====================
@@ -144,7 +146,7 @@ public class Config implements AutoCloseable {
      *  ambiguous and is resolved against the live node's type, as before. */
     private JsonNode resolve(final String path) {
         JsonNode cur = root;
-        for (final DPath.Seg seg : DPath.parse(path, sep())) {
+        for (final DPath.Seg seg : DPath.parse(path)) {
             if (seg.index) {
                 if (!(cur instanceof ArrayNode)) {
                     return null; // [n] only addresses an array element
@@ -193,7 +195,7 @@ public class Config implements AutoCloseable {
     /** Write navigation: walks to the leaf's parent, creating intermediate objects as needed. Only
      *  ever mints ObjectNodes — a numeric segment never grows an array on the write path. */
     private ParentAndKey vivify(final String path) {
-        final String[] segs = DPath.split(path, sep());
+        final String[] segs = DPath.split(path);
         if (segs.length == 0) {
             throw new IllegalArgumentException("cannot set the root path as a leaf value");
         }
@@ -201,9 +203,9 @@ public class Config implements AutoCloseable {
         final StringBuilder prefix = new StringBuilder();
         for (int i = 0; i < segs.length - 1; i++) {
             if (prefix.length() > 0) {
-                prefix.append(sep());
+                prefix.append(DPath.SEP);
             }
-            prefix.append(DPath.escapeSegment(segs[i], sep())); // a dot inside the key stays escaped in the path key
+            prefix.append(DPath.escapeSegment(segs[i])); // a dot inside the key stays escaped in the path key
             final JsonNode next = cur.get(segs[i]);
             if (next instanceof ObjectNode) {
                 cur = (ObjectNode) next;
@@ -247,7 +249,7 @@ public class Config implements AutoCloseable {
         }
         // A genuine POJO (serializes to an object, and is not a Map/JsonNode) is merged annotation-aware;
         // everything native takes the raw replace path below.
-        if (lifecycleCodec != null && node instanceof ObjectNode && isEntityValue(value)) {
+        if (codec != null && node instanceof ObjectNode && isEntityValue(value)) {
             mergeEntity(root ? "" : path, value);
             return;
         }
@@ -281,7 +283,7 @@ public class Config implements AutoCloseable {
      * index into a non-array throws, mirroring the "{@code vivify} never grows an array" invariant.
      */
     private void setValueBracketed(final String path, final JsonNode node) {
-        final List<DPath.Seg> segs = DPath.parse(path, sep());
+        final List<DPath.Seg> segs = DPath.parse(path);
         final StringBuilder parentDotted = new StringBuilder();
         final JsonNode parent = walkToParent(segs, true, parentDotted, path);
         final DPath.Seg last = segs.get(segs.size() - 1);
@@ -314,8 +316,8 @@ public class Config implements AutoCloseable {
     /** Drop a replaced container's comment subtree, keyed by the parent's dotted path plus this leaf. */
     private void dropReplacedComments(final JsonNode existing, final StringBuilder parentDotted, final String leaf) {
         if (existing != null && existing.isContainerNode()) {
-            final String escLeaf = DPath.escapeSegment(leaf, sep());
-            final String dotted = parentDotted.length() == 0 ? escLeaf : parentDotted + String.valueOf(sep()) + escLeaf;
+            final String escLeaf = DPath.escapeSegment(leaf);
+            final String dotted = parentDotted.length() == 0 ? escLeaf : parentDotted + String.valueOf(DPath.SEP) + escLeaf;
             comments.removeSubtree(dotted);
         }
     }
@@ -385,9 +387,9 @@ public class Config implements AutoCloseable {
 
     private void appendDotted(final StringBuilder dotted, final String seg) {
         if (dotted.length() > 0) {
-            dotted.append(sep());
+            dotted.append(DPath.SEP);
         }
-        dotted.append(DPath.escapeSegment(seg, sep()));
+        dotted.append(DPath.escapeSegment(seg));
     }
 
     public void setValue(final String path, final Object value, final String comment) {
@@ -422,8 +424,8 @@ public class Config implements AutoCloseable {
         if (DPath.hasBracket(path)) {
             return removeValueBracketed(path);
         }
-        final JsonNode parent = resolve(DPath.parent(path, sep()));
-        final String leaf = DPath.leaf(path, sep());
+        final JsonNode parent = resolve(DPath.parent(path));
+        final String leaf = DPath.leaf(path);
         boolean removed = false;
         if (parent instanceof ObjectNode) {
             removed = ((ObjectNode) parent).remove(leaf) != null;
@@ -440,7 +442,7 @@ public class Config implements AutoCloseable {
 
     /** Bracket-path remove: drop the element/key addressed by a path that uses {@code [n]} grammar. */
     private boolean removeValueBracketed(final String path) {
-        final List<DPath.Seg> segs = DPath.parse(path, sep());
+        final List<DPath.Seg> segs = DPath.parse(path);
         final StringBuilder parentDotted = new StringBuilder();
         final JsonNode parent = walkToParent(segs, false, parentDotted, path);
         if (parent == null) {
@@ -472,7 +474,7 @@ public class Config implements AutoCloseable {
         }
         if (removed) {
             final String dotted = parentDotted.length() == 0
-                    ? leafDotted : parentDotted + String.valueOf(sep()) + leafDotted;
+                    ? leafDotted : parentDotted + String.valueOf(DPath.SEP) + leafDotted;
             comments.removeSubtree(dotted);
             dirty = true;
         }
@@ -494,7 +496,7 @@ public class Config implements AutoCloseable {
      * @throws IllegalStateException if this config was not opened with a codec (e.g. {@code new Config()})
      */
     public <T> T getValue(final String path, final Class<T> type) {
-        return getValue(path, type, requireLifecycleCodec());
+        return getValue(path, type, requireCodec());
     }
 
     /** As {@link #getValue(String, Class)}, binding through an explicitly supplied {@code codec}. */
@@ -506,7 +508,7 @@ public class Config implements AutoCloseable {
      *  return {@code target} — the in-place counterpart to {@link #getValue(String, Class)}. */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public <T> T getValueInto(final String path, final T target) {
-        final EntityBinder binder = bind(target.getClass(), requireLifecycleCodec());
+        final EntityBinder binder = bind(target.getClass(), requireCodec());
         return (T) binder.readInto(path, target);
     }
 
@@ -582,7 +584,7 @@ public class Config implements AutoCloseable {
      * @throws IllegalStateException if this config was not opened with a codec (e.g. {@code new Config()})
      */
     public <T> List<T> getList(final String path, final Class<T> elementType) {
-        return getList(path, elementType, requireLifecycleCodec());
+        return getList(path, elementType, requireCodec());
     }
 
     /** As {@link #getList(String, Class)}, binding through an explicitly supplied {@code codec}. */
@@ -592,7 +594,7 @@ public class Config implements AutoCloseable {
         if (!(node instanceof ArrayNode)) {
             return out;
         }
-        final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
+        final ObjectMapper mapper = codec.getObjectMapper();
         for (final JsonNode element : node) {
             try {
                 out.add(mapper.convertValue(element, elementType));
@@ -653,7 +655,7 @@ public class Config implements AutoCloseable {
         final Iterator<Map.Entry<String, JsonNode>> it = node.fields();
         while (it.hasNext()) {
             final Map.Entry<String, JsonNode> e = it.next();
-            final String p = DPath.joinSegment(prefix, e.getKey(), sep());
+            final String p = DPath.joinSegment(prefix, e.getKey());
             out.add(p);
             if (e.getValue() instanceof ObjectNode) {
                 collectDeep((ObjectNode) e.getValue(), p, out);
@@ -674,7 +676,7 @@ public class Config implements AutoCloseable {
     public Set<ConfigSection> getKeysSections(final String path) {
         final Set<ConfigSection> out = new LinkedHashSet<>();
         for (final String k : getKeys(path)) {
-            out.add(new ConfigSection(this, DPath.joinSegment(path, k, sep())));
+            out.add(new ConfigSection(this, DPath.joinSegment(path, k)));
         }
         return out;
     }
@@ -759,7 +761,7 @@ public class Config implements AutoCloseable {
             newDefaultValueToSave = true;
             return def;
         }
-        if (def != null && !isScalarDefault(def) && lifecycleCodec != null) {
+        if (def != null && !isScalarDefault(def) && codec != null) {
             @SuppressWarnings("unchecked")
             final D bound = (D) getValue(path, def.getClass());
             return bound != null ? bound : def;
@@ -791,7 +793,7 @@ public class Config implements AutoCloseable {
             newDefaultValueToSave = true;
             return def;
         }
-        if (def != null && !def.isEmpty() && lifecycleCodec != null) {
+        if (def != null && !def.isEmpty() && codec != null) {
             return getList(path, (Class<D>) def.get(0).getClass());
         }
         return (List<D>) (List<?>) getList(path, Object.class);
@@ -829,7 +831,7 @@ public class Config implements AutoCloseable {
      *  the file lacked are seeded — the engine behind {@link #getOrSetValueIfAbsentInto}. */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void seedEntityFieldwise(final String path, final Object def) {
-        final EntityBinder binder = bind(def.getClass(), requireLifecycleCodec());
+        final EntityBinder binder = bind(def.getClass(), requireCodec());
         binder.readInto(path, def);
         binder.write(path, def);
         newDefaultValueToSave = true;
@@ -901,18 +903,18 @@ public class Config implements AutoCloseable {
     }
 
     public <T> EntityBinder<T> bind(final Class<T> type, final Codec codec, final BindOptions options) {
-        final JavaType jt = ((ObjectMapperAware) codec).objectMapper().constructType(type);
+        final JavaType jt = codec.getObjectMapper().constructType(type);
         return new EntityBinder<>(this, jt, codec, options);
     }
 
     /** As {@link #bind(Class, Codec)} using the lifecycle codec this config was opened with. */
     public <T> EntityBinder<T> bind(final Class<T> type) {
-        return bind(type, requireLifecycleCodec());
+        return bind(type, requireCodec());
     }
 
     /** As {@link #bind(Class, Codec, BindOptions)} using the lifecycle codec. */
     public <T> EntityBinder<T> bind(final Class<T> type, final BindOptions options) {
-        return bind(type, requireLifecycleCodec(), options);
+        return bind(type, requireCodec(), options);
     }
 
     /** Convenience: bind the whole tree to a fresh {@code T} (runs {@code @PostLoad}). */
@@ -928,19 +930,19 @@ public class Config implements AutoCloseable {
         return bind(type, codec).readResult("");
     }
 
-    private Codec requireLifecycleCodec() {
-        if (lifecycleCodec == null) {
+    private Codec requireCodec() {
+        if (codec == null) {
             throw new IllegalStateException(
                     "this Config has no codec; open it via Config.open(...) or pass a codec explicitly");
         }
-        return lifecycleCodec;
+        return codec;
     }
 
     /** Merge a POJO into the tree at {@code path} via the binder (annotation-aware), using the lifecycle
      *  codec — the engine behind a POJO {@link #setValue(String, Object)}. */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void mergeEntity(final String path, final Object pojo) {
-        final EntityBinder binder = bind(pojo.getClass(), lifecycleCodec);
+        final EntityBinder binder = bind(pojo.getClass(), codec);
         binder.write(path, pojo);
         dirty = true; // the binder mutated the tree/comments directly, so flag a pending save
     }
@@ -948,7 +950,7 @@ public class Config implements AutoCloseable {
     /** Store a collection of {@code @KeyIndex}-bearing entities at {@code path} as a section keyed by the
      *  index value. */
     public void writeKeyIndexCollection(final String path, final Collection<?> collection, final Codec codec) {
-        final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
+        final ObjectMapper mapper = codec.getObjectMapper();
         setValue(path, KeyIndexer.toIndexed(collection, mapper));
     }
 
@@ -965,7 +967,7 @@ public class Config implements AutoCloseable {
      */
     public <T> BindResult<List<T>> readKeyIndexCollectionResult(final String path, final Class<T> elementType,
                                                                 final Codec codec) {
-        final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
+        final ObjectMapper mapper = codec.getObjectMapper();
         final List<LoadIssue> issues = new ArrayList<>();
         final List<T> out = KeyIndexer.fromIndexed(getNode(path), elementType, mapper, issues);
         this.lastKeyIndexCollectionIssues = Collections.unmodifiableList(issues);
@@ -1015,7 +1017,7 @@ public class Config implements AutoCloseable {
      *  mapper); the codec supplies the binding mapper and there is no back-store. */
     public static Config inMemory(final Codec codec) {
         final Config cfg = new Config();
-        cfg.lifecycleCodec = codec;
+        cfg.codec = codec;
         cfg.bindCoercionTo(codec);
         return cfg;
     }
@@ -1033,7 +1035,7 @@ public class Config implements AutoCloseable {
         }
         lock.lock();
         try {
-            this.lifecycleCodec = codec;
+            this.codec = codec;
             bindCoercionTo(codec);
         } finally {
             lock.unlock();
@@ -1081,7 +1083,7 @@ public class Config implements AutoCloseable {
                               final BackStore.Durability durability) {
         final Config cfg = new Config();
         cfg.backStore = new AtomicFileBackStore(path, durability);
-        cfg.lifecycleCodec = codec;
+        cfg.codec = codec;
         cfg.bindCoercionTo(codec);
         cfg.loadInternal(true);
         return cfg;
@@ -1097,20 +1099,16 @@ public class Config implements AutoCloseable {
     }
 
     /**
-     * Wires the dynamic API's arbitrary-POJO escape to a codec's {@link ObjectMapper}, so
+     * Wires the dynamic API's arbitrary-POJO escape to the codec's {@link ObjectMapper}, so
      * {@code setValue(path, pojo)} can store any Jackson-serializable object (honoring the binding
-     * annotations) instead of throwing. Without a codec the escape stays unbound, since there is no
-     * mapper to decide how an unknown type serializes.
+     * annotations). Every codec is Jackson-backed (exposes a mapper), so this is unconditional.
      */
     private void bindCoercionTo(final Codec codec) {
-        if (codec instanceof ObjectMapperAware) {
-            final ObjectMapper mapper = ((ObjectMapperAware) codec).objectMapper();
-            coercion.setPojoToNode(mapper::valueToTree);
-        }
+        coercion.setPojoToNode(codec.getObjectMapper()::valueToTree);
     }
 
     private void requireBackStore() {
-        if (backStore == null || lifecycleCodec == null) {
+        if (backStore == null || codec == null) {
             throw new IllegalStateException("this Config has no backStore; build it with Config.open(path, codec)");
         }
     }
@@ -1142,17 +1140,17 @@ public class Config implements AutoCloseable {
 
     private void decodeInto(final byte[] bytes) {
         final String text = new String(bytes, backStore.charset());
-        final JsonNode tree = lifecycleCodec.readTree(text);
+        final JsonNode tree = codec.readTree(text);
         final ObjectNode newRoot = (tree instanceof ObjectNode) ? (ObjectNode) tree : nodes.objectNode();
         final CommentTree newComments;
         final KeyOrder newOrder;
-        if (lifecycleCodec instanceof CommentAware) {
-            final CommentAware.CommentLoad load = ((CommentAware) lifecycleCodec).readComments(text);
+        if (codec instanceof CommentAware) {
+            final CommentAware.CommentLoad load = ((CommentAware) codec).readComments(text);
             newComments = load.comments;
             newOrder = load.keyOrder;
         } else {
             newComments = new CommentTree();
-            newOrder = KeyOrder.capture(newRoot, sep());
+            newOrder = KeyOrder.capture(newRoot);
         }
         applyLoaded(newRoot, newComments, newOrder);
     }
@@ -1165,17 +1163,27 @@ public class Config implements AutoCloseable {
     }
 
     private byte[] encode() {
-        return encodeWith(lifecycleCodec, backStore.charset());
+        return encodeWith(codec, backStore.charset());
     }
 
     /** Encode the tree (with comments + key order) through {@code codec}, using {@code charset} for the
-     *  text→bytes step. The comment emitter is used only when the codec round-trips comments. */
+     *  text→bytes step. The comment emitter is used only when the codec round-trips comments.
+     *
+     *  <p>The tree and comment overlay are snapshotted (a private deep copy) before the emit — and this runs
+     *  under the per-Config {@code lock} held by every {@code save(...)} path. The emit then iterates the
+     *  copy, so a concurrent UNLOCKED mutation (a {@code setValue} or a raw {@code getRoot()} edit on another
+     *  thread) can no longer corrupt the document mid-write. It is a partial guard: a {@code Config} is still
+     *  a single-writer handle (the copy itself can race a concurrent mutation), but the long emit window —
+     *  where the {@code ConcurrentModificationException} used to surface — is closed. {@link KeyOrder} is an
+     *  immutable load-time snapshot, so it is shared, not copied. */
     private byte[] encodeWith(final Codec codec, final Charset charset) {
+        final ObjectNode treeSnapshot = root.deepCopy();
+        final CommentTree commentsSnapshot = comments.copy();
         final String text;
         if (codec instanceof CommentAware && codec.commentFidelity() != CommentFidelity.NONE) {
-            text = ((CommentAware) codec).writeWithComments(root, comments, fileKeyOrder);
+            text = ((CommentAware) codec).writeWithComments(treeSnapshot, commentsSnapshot, fileKeyOrder);
         } else {
-            text = codec.writeTreePlain(root);
+            text = codec.writeTreePlain(treeSnapshot);
         }
         return text.getBytes(charset);
     }
@@ -1237,9 +1245,9 @@ public class Config implements AutoCloseable {
         }
     }
 
-    /** Fire-and-forget save on the shared daemon executor. */
+    /** Fire-and-forget save on the shared async executor (virtual threads on Java 21+, a daemon pool below). */
     public CompletableFuture<Void> saveAsync() {
-        return CompletableFuture.runAsync(this::save, ConfigExecutor.shared());
+        return CompletableFuture.runAsync(this::save, ConfigExecutors.get());
     }
 
     /**

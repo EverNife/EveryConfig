@@ -50,7 +50,7 @@ class JsonCodecTest {
         final Pojo original = new Pojo("hello", 42, true);
         final JsonNode tree = codec.valueToTree(original);
 
-        final ObjectMapper mapper = codec.objectMapper();
+        final ObjectMapper mapper = codec.getObjectMapper();
         final JavaType type = mapper.getTypeFactory().constructType(Pojo.class);
         final Pojo restored = codec.treeToValue(tree, type);
 
@@ -63,7 +63,7 @@ class JsonCodecTest {
     void unknownKeysSurviveBinding() {
         final JsonCodec codec = new JsonCodec();
         final JsonNode tree = codec.readTree("{\"name\":\"x\",\"count\":1,\"active\":false,\"extra\":\"ignored\"}");
-        final JavaType type = codec.objectMapper().getTypeFactory().constructType(Pojo.class);
+        final JavaType type = codec.getObjectMapper().getTypeFactory().constructType(Pojo.class);
         // An unknown property must not fail binding (FAIL_ON_UNKNOWN_PROPERTIES is off).
         final Pojo restored = codec.treeToValue(tree, type);
         assertEquals("x", restored.name);

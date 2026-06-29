@@ -7,21 +7,25 @@ import java.util.List;
  * Dotted-path utilities (the "D" is for the dotted-path grammar of the dynamic API; named to avoid
  * clashing with {@link java.nio.file.Path}). The empty string and {@code null} both denote the root.
  *
- * <p>The separator (a dot by default) splits a path into segments. A key that legitimately contains the
- * separator is escaped with a backslash: {@code a\.b} is the single key {@code "a.b"}, and {@code \\} is a
- * literal backslash. A path string is therefore the <em>escaped</em> form; {@link #split}/{@link #parse}/
- * {@link #leaf} return the <em>literal</em> key names, and {@link #joinSegment}/{@link #escapeSegment}
- * build the escaped form back from a literal key. Escaping is a no-op for a key free of the separator and
- * backslash, so an ordinary dotted path behaves exactly as before.
+ * <p>The separator is fixed at {@link #SEP} (a dot) — it is the one path-grammar constant for the whole
+ * library, so callers never pass it in. A key that legitimately contains the separator is escaped with a
+ * backslash: {@code a\.b} is the single key {@code "a.b"}, and {@code \\} is a literal backslash. A path
+ * string is therefore the <em>escaped</em> form; {@link #split}/{@link #parse}/{@link #leaf} return the
+ * <em>literal</em> key names, and {@link #joinSegment}/{@link #escapeSegment} build the escaped form back
+ * from a literal key. Escaping is a no-op for a key free of the separator and backslash, so an ordinary
+ * dotted path behaves exactly as before.
  */
 public final class DPath {
+
+    /** The path separator for the dynamic API. Fixed: a key containing it is escaped ({@code a\.b}). */
+    public static final char SEP = '.';
 
     private DPath() {
     }
 
     /** {@code "a.b.c"} → {@code ["a","b","c"]}; an escaped separator stays in its segment
      *  ({@code "a\.b.c"} → {@code ["a.b","c"]}); {@code ""}/{@code null} → empty array. */
-    public static String[] split(final String path, final char sep) {
+    public static String[] split(final String path) {
         if (isRoot(path)) {
             return new String[0];
         }
@@ -32,7 +36,7 @@ public final class DPath {
             if (c == '\\' && i + 1 < path.length()) {
                 cur.append(path.charAt(i + 1)); // the escaped character is literal
                 i++;
-            } else if (c == sep) {
+            } else if (c == SEP) {
                 out.add(cur.toString());
                 cur.setLength(0);
             } else {
@@ -49,47 +53,47 @@ public final class DPath {
 
     /** {@code "a.b.c"} → {@code "a.b"}; {@code "a"} → {@code ""}. Splits on the last UNescaped separator,
      *  so the returned parent keeps its escaped form. */
-    public static String parent(final String path, final char sep) {
+    public static String parent(final String path) {
         if (isRoot(path)) {
             return "";
         }
-        final int i = lastUnescapedSep(path, sep);
+        final int i = lastUnescapedSep(path);
         return i < 0 ? "" : path.substring(0, i);
     }
 
     /** {@code "a.b.c"} → {@code "c"}; {@code "a\.b"} → the literal key {@code "a.b"}. */
-    public static String leaf(final String path, final char sep) {
-        final String[] segs = split(path, sep);
+    public static String leaf(final String path) {
+        final String[] segs = split(path);
         return segs.length == 0 ? "" : segs[segs.length - 1];
     }
 
     /** Join two already-escaped path strings (no re-escaping — both sides are path-form, not raw keys). */
-    public static String join(final String base, final String sub, final char sep) {
+    public static String join(final String base, final String sub) {
         if (isRoot(base)) {
             return sub == null ? "" : sub;
         }
         if (isRoot(sub)) {
             return base;
         }
-        return base + sep + sub;
+        return base + SEP + sub;
     }
 
     /** Append a LITERAL key to an escaped path, escaping the key so a separator inside it stays part of the
-     *  key. {@code joinSegment("a", "b.c", '.')} → {@code "a.b\.c"}. */
-    public static String joinSegment(final String base, final String literalKey, final char sep) {
-        final String esc = escapeSegment(literalKey, sep);
-        return isRoot(base) ? esc : base + sep + esc;
+     *  key. {@code joinSegment("a", "b.c")} → {@code "a.b\.c"}. */
+    public static String joinSegment(final String base, final String literalKey) {
+        final String esc = escapeSegment(literalKey);
+        return isRoot(base) ? esc : base + SEP + esc;
     }
 
     /** Escape a literal key for embedding in a path: a backslash and the separator each gain a backslash. */
-    public static String escapeSegment(final String literalKey, final char sep) {
-        if (literalKey.indexOf('\\') < 0 && literalKey.indexOf(sep) < 0) {
+    public static String escapeSegment(final String literalKey) {
+        if (literalKey.indexOf('\\') < 0 && literalKey.indexOf(SEP) < 0) {
             return literalKey; // common case: nothing to escape, returned untouched
         }
         final StringBuilder sb = new StringBuilder(literalKey.length() + 4);
         for (int i = 0; i < literalKey.length(); i++) {
             final char c = literalKey.charAt(i);
-            if (c == '\\' || c == sep) {
+            if (c == '\\' || c == SEP) {
                 sb.append('\\');
             }
             sb.append(c);
@@ -98,13 +102,13 @@ public final class DPath {
     }
 
     /** Index of the last separator that is NOT backslash-escaped, or -1. */
-    private static int lastUnescapedSep(final String path, final char sep) {
+    private static int lastUnescapedSep(final String path) {
         int last = -1;
         for (int i = 0; i < path.length(); i++) {
             final char c = path.charAt(i);
             if (c == '\\') {
                 i++; // skip the escaped character
-            } else if (c == sep) {
+            } else if (c == SEP) {
                 last = i;
             }
         }
@@ -163,13 +167,13 @@ public final class DPath {
      * {@link #split} (each piece a key segment), so existing dotted paths behave identically; bracket
      * runs ({@code list[0]}, {@code m[1][2]}, {@code list[-1].name}) become explicit index segments.
      */
-    public static List<Seg> parse(final String path, final char sep) {
+    public static List<Seg> parse(final String path) {
         final List<Seg> out = new ArrayList<>();
         if (isRoot(path)) {
             return out;
         }
         if (path.indexOf('[') < 0) {
-            for (final String s : split(path, sep)) {
+            for (final String s : split(path)) {
                 out.add(Seg.ofKey(s));
             }
             return out;
@@ -182,7 +186,7 @@ public final class DPath {
             if (c == '\\' && i + 1 < n) {
                 buf.append(path.charAt(i + 1)); // the escaped character is a literal key character
                 i += 2;
-            } else if (c == sep) {
+            } else if (c == SEP) {
                 out.add(Seg.ofKey(buf.toString()));
                 buf.setLength(0);
                 i++;
@@ -196,7 +200,7 @@ public final class DPath {
                     }
                     out.add(Seg.ofIndex(idx));
                     i = close + 1;
-                    if (i < n && path.charAt(i) == sep) {
+                    if (i < n && path.charAt(i) == SEP) {
                         i++; // a separator joining "]" to the next key is redundant
                     }
                 } else {

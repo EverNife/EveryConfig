@@ -119,12 +119,12 @@ class EntityBinderWriteTest {
                 "{\"shape\":{\"type\":\"circle\",\"radius\":2.5},\"label\":\"shapes\"}");
         final ObjectNode candidate = (ObjectNode) json.readTree(
                 "{\"shape\":{\"radius\":2.5},\"label\":\"shapes\"}");
-        final SchemaCache cache = new SchemaCache(json.objectMapper());
-        final Schema schema = cache.of(json.objectMapper().constructType(Dtos.PolymorphicPojo.class));
+        final SchemaCache cache = new SchemaCache(json.getObjectMapper());
+        final Schema schema = cache.of(json.getObjectMapper().constructType(Dtos.PolymorphicPojo.class));
 
         SmartMerge.mergeInto(canonical, candidate, schema,
                 BindOptions.defaults().withObsoletePolicy(BindOptions.ObsoletePolicy.REMOVE),
-                new CommentTree(), "", false, '.');
+                new CommentTree(), "", false);
 
         assertTrue(canonical.get("shape").has("type"), "type discriminator must survive REMOVE pruning");
         assertEquals("circle", canonical.get("shape").get("type").asText());

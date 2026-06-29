@@ -5,7 +5,6 @@ import br.com.finalcraft.everyconfig.codec.CodecException;
 import br.com.finalcraft.everyconfig.codec.CommentAware;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.ECMapperProfiles;
-import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
@@ -15,8 +14,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
+import org.yaml.snakeyaml.LoaderOptions;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -37,9 +38,8 @@ import java.util.Set;
  * independent of the mapper's data pass ({@link #readTree}). Comment text is stored WITHOUT the
  * {@code #} prefix; the prefix is (re)added when emitting.
  */
-public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
+public final class YamlCodec implements Codec, CommentAware {
 
-    private static final char SEP = '.';
 
     /** One shared, isolated default mapper reused across every default-constructed instance. */
     private static final ObjectMapper DEFAULT = ECMapperProfiles.storageSafe(buildYamlMapper());
@@ -56,8 +56,17 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
         this.mapper = ECMapperProfiles.isolate(userMapper, () -> DEFAULT);
     }
 
+    /** SnakeYAML's default input cap is 3 MB; a large config (tens of thousands of keys) exceeds it and the
+     *  load fails. Config files are trusted local data, so the cap is raised to a generous bound. */
+    private static final int YAML_CODE_POINT_LIMIT = 128 * 1024 * 1024; // 128 MB
+
     private static YAMLMapper buildYamlMapper() {
-        return YAMLMapper.builder()
+        final LoaderOptions loaderOptions = new LoaderOptions();
+        loaderOptions.setCodePointLimit(YAML_CODE_POINT_LIMIT);
+        final YAMLFactory factory = YAMLFactory.builder()
+                .loaderOptions(loaderOptions)
+                .build();
+        return YAMLMapper.builder(factory)
                 .disable(YAMLGenerator.Feature.WRITE_DOC_START_MARKER) // no leading '---'
                 .enable(YAMLGenerator.Feature.MINIMIZE_QUOTES)
                 .disable(YAMLGenerator.Feature.SPLIT_LINES) // keep a long scalar on one line
@@ -82,7 +91,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
     }
 
     @Override
-    public ObjectMapper objectMapper() {
+    public ObjectMapper getObjectMapper() {
         return mapper;
     }
 
@@ -131,7 +140,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
         final CommentTree comments = parseComments(text);
         final JsonNode data = readTree(text);
         final KeyOrder order = (data instanceof ObjectNode)
-                ? KeyOrder.capture((ObjectNode) data, SEP)
+                ? KeyOrder.capture((ObjectNode) data)
                 : KeyOrder.empty();
         return new CommentLoad(comments, order);
     }
@@ -206,7 +215,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
         final String ind = spaces(indent);
         for (final String key : orderedFieldNames(node, parentPath, order)) {
             final JsonNode val = node.get(key);
-            final String path = DPath.joinSegment(parentPath, key, SEP);
+            final String path = DPath.joinSegment(parentPath, key);
 
             for (int b = comments.getBlankLinesBefore(path); b > 0; b--) {
                 out.append('\n'); // preserve the file's vertical spacing above this key
@@ -240,7 +249,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
                     // comment sits above its element. (Object/nested or uncommented sequences render whole
                     // below, byte-identical to before.)
                     for (int i = 0; i < arr.size(); i++) {
-                        final String elemBlock = comments.getComment(DPath.joinSegment(path, String.valueOf(i), SEP), CommentType.BLOCK);
+                        final String elemBlock = comments.getComment(DPath.joinSegment(path, String.valueOf(i)), CommentType.BLOCK);
                         if (elemBlock != null) {
                             for (final String commentLine : elemBlock.split("\n", -1)) {
                                 out.append(ind).append("  ").append(prefixComment(commentLine)).append('\n');
@@ -294,7 +303,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
     /** True when any element under {@code path} (as {@code path.i}) carries a block comment. */
     private boolean anyElementComment(final ArrayNode arr, final String path, final CommentTree comments) {
         for (int i = 0; i < arr.size(); i++) {
-            if (comments.getComment(DPath.joinSegment(path, String.valueOf(i), SEP), CommentType.BLOCK) != null) {
+            if (comments.getComment(DPath.joinSegment(path, String.valueOf(i)), CommentType.BLOCK) != null) {
                 return true;
             }
         }
@@ -303,20 +312,18 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
 
     /** Captured key order first (for keys still present), then any live keys not in the snapshot. */
     private List<String> orderedFieldNames(final ObjectNode node, final String parentPath, final KeyOrder order) {
-        final List<String> result = new ArrayList<>();
         final Set<String> live = new LinkedHashSet<>();
         node.fieldNames().forEachRemaining(live::add);
+        // Captured order first, then any live keys not yet placed. A LinkedHashSet keeps membership O(1):
+        // an ArrayList.contains here was O(n²) and dominated the save of a node with many keys.
+        final LinkedHashSet<String> result = new LinkedHashSet<>(Math.max(16, live.size() * 2));
         for (final String k : order.orderedKeys(parentPath)) {
             if (live.contains(k)) {
                 result.add(k);
             }
         }
-        for (final String k : live) {
-            if (!result.contains(k)) {
-                result.add(k);
-            }
-        }
-        return result;
+        result.addAll(live);
+        return new ArrayList<>(result);
     }
 
     // ---- comment text parser (text pass, no mapper) --------------------
@@ -391,7 +398,7 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
                         currentArrayPath = arrayPath;
                         arrayElementIndex = 0;
                     }
-                    assignBlockComment(tree, DPath.joinSegment(arrayPath, String.valueOf(arrayElementIndex), SEP), pending);
+                    assignBlockComment(tree, DPath.joinSegment(arrayPath, String.valueOf(arrayElementIndex)), pending);
                     arrayElementIndex++;
                 }
                 pending.clear();
@@ -476,9 +483,9 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
         final Iterator<Frame> it = stack.descendingIterator(); // outermost -> innermost
         while (it.hasNext()) {
             if (sb.length() > 0) {
-                sb.append(SEP);
+                sb.append(DPath.SEP);
             }
-            sb.append(DPath.escapeSegment(it.next().key, SEP));
+            sb.append(DPath.escapeSegment(it.next().key));
         }
         return sb.toString();
     }
@@ -656,9 +663,9 @@ public final class YamlCodec implements Codec, ObjectMapperAware, CommentAware {
         final StringBuilder sb = new StringBuilder();
         final Iterator<Frame> it = ancestors.descendingIterator(); // outermost -> innermost
         while (it.hasNext()) {
-            sb.append(DPath.escapeSegment(it.next().key, SEP)).append(SEP);
+            sb.append(DPath.escapeSegment(it.next().key)).append(DPath.SEP);
         }
-        return sb.append(DPath.escapeSegment(key, SEP)).toString();
+        return sb.append(DPath.escapeSegment(key)).toString();
     }
 
     private static String spaces(final int n) {

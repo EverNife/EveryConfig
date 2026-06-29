@@ -4,7 +4,6 @@ import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CodecException;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.ECMapperProfiles;
-import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -17,7 +16,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
  * are human-opened. Explicit nulls are kept (they are user data); the space-saving variant is the
  * {@code compact} profile, opt-in via a user mapper.
  */
-public final class JsonCodec implements Codec, ObjectMapperAware {
+public final class JsonCodec implements Codec {
 
     /** One shared, isolated default mapper reused across every default-constructed instance. */
     private static final ObjectMapper DEFAULT = ECMapperProfiles.strictJson(JsonMapper.builder().build());
@@ -61,7 +60,7 @@ public final class JsonCodec implements Codec, ObjectMapperAware {
     }
 
     @Override
-    public ObjectMapper objectMapper() {
+    public ObjectMapper getObjectMapper() {
         return mapper;
     }
 

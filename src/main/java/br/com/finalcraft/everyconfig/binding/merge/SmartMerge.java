@@ -34,12 +34,11 @@ public final class SmartMerge {
      *                    address an obsolete key's comment
      * @param lossless    whether the codec round-trips comments losslessly; {@code COMMENT_OUT} degrades to
      *                    keep-only when false
-     * @param sep         the path separator joining {@code pathPrefix} to a key
      */
     public static void mergeInto(final ObjectNode canonical, final ObjectNode candidate,
                           final Schema schema, final BindOptions options,
                           final CommentTree comments, final String pathPrefix,
-                          final boolean lossless, final char sep) {
+                          final boolean lossless) {
         final Iterator<String> names = candidate.fieldNames();
         while (names.hasNext()) {
             final String key = names.next();
@@ -49,7 +48,7 @@ public final class SmartMerge {
                 canonical.set(key, cand); // missing from the file -> seed from the POJO, appended
             } else if (canon.isObject() && cand.isObject()) {
                 mergeInto((ObjectNode) canon, (ObjectNode) cand, schema.child(key), options,
-                        comments, childPath(pathPrefix, key, sep), lossless, sep);
+                        comments, childPath(pathPrefix, key), lossless);
             } else {
                 canonical.set(key, cand); // arrays, scalars, and mixed kinds -> the POJO value wins
             }
@@ -74,13 +73,13 @@ public final class SmartMerge {
                     canonical.remove(key);
                 } else if (lossless && comments != null) {
                     // Keep the data, stamp an authoritative deprecation marker (LOSSLESS codecs only).
-                    comments.setComment(childPath(pathPrefix, key, sep), DEPRECATION_MARKER, CommentType.BLOCK);
+                    comments.setComment(childPath(pathPrefix, key), DEPRECATION_MARKER, CommentType.BLOCK);
                 }
             }
         }
     }
 
-    private static String childPath(final String prefix, final String key, final char sep) {
-        return DPath.joinSegment(prefix, key, sep);
+    private static String childPath(final String prefix, final String key) {
+        return DPath.joinSegment(prefix, key);
     }
 }
