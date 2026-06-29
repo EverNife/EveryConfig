@@ -75,6 +75,12 @@ test {
     javaLauncher = javaToolchains.launcherFor {
         languageVersion = JavaLanguageVersion.of(testJdkVersion)
     }
+    // The stress/benchmark suite (config.stress.*) is gated on this system property; a normal run skips it.
+    // Enable with -Pstress, which also raises the heap so the many-live-configs memory case has room.
+    if (project.hasProperty('stress')) {
+        systemProperty 'everyconfig.stress', 'true'
+        maxHeapSize = '2g'
+    }
 }
 
 publishing {
