@@ -4,7 +4,6 @@ import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CodecException;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.ECMapperProfiles;
-import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,7 +22,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
  * {@link #INSTANCE}. The mapper is the storage-safe default ({@code EveryConfigModule} + jsr310 + jdk8), so
  * binding behaves identically to the file codecs — only the text edge differs.
  */
-public final class InMemoryCodec implements Codec, ObjectMapperAware {
+public final class InMemoryCodec implements Codec {
 
     private static final ObjectMapper DEFAULT = ECMapperProfiles.storageSafe(JsonMapper.builder().build());
 
@@ -58,7 +57,7 @@ public final class InMemoryCodec implements Codec, ObjectMapperAware {
     }
 
     @Override
-    public ObjectMapper objectMapper() {
+    public ObjectMapper getObjectMapper() {
         return mapper;
     }
 

@@ -10,7 +10,6 @@ import br.com.finalcraft.everyconfig.annotation.CommentMode;
 import br.com.finalcraft.everyconfig.annotation.Section;
 import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
-import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.everyconfig.config.Config;
 import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
@@ -57,13 +56,11 @@ public final class EntityBinder<T> {
     private List<LoadIssue> lastIssues = Collections.emptyList();
 
     public EntityBinder(final Config config, final JavaType type, final Codec codec, final BindOptions options) {
-        if (!(codec instanceof ObjectMapperAware)) {
-            throw new BindException("codec " + codec.formatId() + " does not expose an ObjectMapper for binding");
-        }
         this.config = config;
         this.type = type;
         this.codec = codec;
-        this.mapper = ((ObjectMapperAware) codec).objectMapper();
+        this.mapper = codec.getObjectMapper(); // every codec is Jackson-backed
+
         this.options = options != null ? options : BindOptions.defaults();
         this.sectionFields = collectSectionFields(type.getRawClass());
     }
@@ -253,7 +250,7 @@ public final class EntityBinder<T> {
             relocateForWrite(candObj);
         }
         SmartMerge.mergeInto(target, candObj, schema(), options, config.getCommentTree(), basePath,
-                codec.commentFidelity() == CommentFidelity.LOSSLESS, config.pathSeparator());
+                codec.commentFidelity() == CommentFidelity.LOSSLESS);
         seedCommentsFromAnnotations(pojo.getClass(), basePath);
     }
 
@@ -349,16 +346,15 @@ public final class EntityBinder<T> {
                 continue;
             }
             final String key = BindingNames.keyFor(f);
-            final char sep = config.pathSeparator();
             final Section sec = f.getAnnotation(Section.class);
             String fieldPath = "";
             if (sec != null && !sec.value().isEmpty()) {
                 for (final String seg : sec.value().split("\\.")) { // @Section spells nesting with '.'
-                    fieldPath = DPath.joinSegment(fieldPath, seg, sep);
+                    fieldPath = DPath.joinSegment(fieldPath, seg);
                 }
             }
-            fieldPath = DPath.joinSegment(fieldPath, key, sep); // a dot inside the key stays escaped in the path
-            final String path = basePath.isEmpty() ? fieldPath : DPath.join(basePath, fieldPath, sep);
+            fieldPath = DPath.joinSegment(fieldPath, key); // a dot inside the key stays escaped in the path
+            final String path = basePath.isEmpty() ? fieldPath : DPath.join(basePath, fieldPath);
             final String text = String.join("\n", c.value());
             if (c.mode() == CommentMode.OVERRIDE) {
                 comments.setComment(path, text, CommentType.BLOCK); // documentation stays current

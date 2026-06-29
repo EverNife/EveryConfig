@@ -65,7 +65,7 @@ class AnnotationBindingTest {
     @Test
     void boundBackThroughRenamedKeys() {
         final JsonNode tree = codec.readTree("{\"max-pool-size\":25,\"custom-host\":\"h\",\"mode\":\"SLOW\"}");
-        final JavaType type = codec.objectMapper().constructType(Server.class);
+        final JavaType type = codec.getObjectMapper().constructType(Server.class);
         final Server s = codec.treeToValue(tree, type);
         assertEquals(25, s.maxPoolSize);
         assertEquals("h", s.host);
@@ -83,7 +83,7 @@ class AnnotationBindingTest {
     @Test
     void classWideKebabBoundBack() {
         final JsonNode tree = codec.readTree("{\"max-pool-size\":25,\"server-host\":\"z\"}");
-        final JavaType type = codec.objectMapper().constructType(KebabClass.class);
+        final JavaType type = codec.getObjectMapper().constructType(KebabClass.class);
         final KebabClass dto = codec.treeToValue(tree, type);
         assertEquals(25, dto.maxPoolSize);
         assertEquals("z", dto.serverHost);

@@ -36,13 +36,13 @@ public final class KeyOrder {
     }
 
     /** Capture the key order of every object node in the tree, keyed by dotted path. */
-    public static KeyOrder capture(final ObjectNode root, final char separator) {
+    public static KeyOrder capture(final ObjectNode root) {
         final Map<String, List<String>> map = new LinkedHashMap<>();
-        captureInto(root, "", separator, map);
+        captureInto(root, "", map);
         return new KeyOrder(map);
     }
 
-    private static void captureInto(final ObjectNode node, final String path, final char sep,
+    private static void captureInto(final ObjectNode node, final String path,
                                     final Map<String, List<String>> out) {
         final List<String> keys = new ArrayList<>();
         final Iterator<Map.Entry<String, JsonNode>> it = node.fields();
@@ -50,8 +50,8 @@ public final class KeyOrder {
             final Map.Entry<String, JsonNode> e = it.next();
             keys.add(e.getKey());
             if (e.getValue() instanceof ObjectNode) {
-                final String childPath = DPath.joinSegment(path, e.getKey(), sep);
-                captureInto((ObjectNode) e.getValue(), childPath, sep, out);
+                final String childPath = DPath.joinSegment(path, e.getKey());
+                captureInto((ObjectNode) e.getValue(), childPath, out);
             }
         }
         out.put(path, keys);

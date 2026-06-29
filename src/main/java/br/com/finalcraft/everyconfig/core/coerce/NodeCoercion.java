@@ -24,7 +24,7 @@ public final class NodeCoercion {
 
     private final JsonNodeFactory nf;
 
-    /** Arbitrary-POJO → node escape, injected by the codec layer (ObjectMapperAware). */
+    /** Arbitrary-POJO → node escape, injected by the codec layer (Codec.getObjectMapper). */
     private Function<Object, JsonNode> pojoToNode = o -> {
         throw new UnsupportedOperationException(
                 "no ObjectMapper bound; cannot serialize " + o.getClass().getName());

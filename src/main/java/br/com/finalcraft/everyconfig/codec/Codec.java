@@ -2,6 +2,7 @@ package br.com.finalcraft.everyconfig.codec;
 
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -96,4 +97,20 @@ public interface Codec {
      * @throws CodecException on a serialization failure.
      */
     JsonNode valueToTree(Object value);
+
+    // ---- shared Jackson engine -----------------------------------------
+
+    /**
+     * The Jackson {@link ObjectMapper} this codec serializes with. EveryConfig is Jackson-backed by design,
+     * so EVERY codec exposes one: sharing it makes the dynamic-tree form and the bound-entity form agree by
+     * construction (a dynamic round-trip and a binding round-trip observe identical node shapes).
+     *
+     * <p>The returned mapper is the codec's ISOLATED instance (a {@code copy()} frozen from any
+     * user-supplied mapper at construction — see {@link ECMapperProfiles#isolate}). It is thread-safe after
+     * construction; callers MUST NOT mutate it, since that would change serialization for every live config
+     * of this format.
+     *
+     * @return the codec's mapper; never null.
+     */
+    ObjectMapper getObjectMapper();
 }

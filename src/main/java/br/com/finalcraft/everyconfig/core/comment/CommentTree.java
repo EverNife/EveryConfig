@@ -185,6 +185,26 @@ public final class CommentTree {
         return byPath.isEmpty();
     }
 
+    /**
+     * A deep, independent copy: the per-path entries plus the header and footer are duplicated, so a later
+     * mutation of either tree never leaks into the other. {@code Config.save()} emits from such a copy
+     * (taken under its lock) so a concurrent unlocked mutation cannot corrupt the write.
+     */
+    public CommentTree copy() {
+        final CommentTree out = new CommentTree();
+        for (final Map.Entry<String, Entry> e : byPath.entrySet()) {
+            final Entry src = e.getValue();
+            final Entry dst = new Entry();
+            dst.block = src.block;
+            dst.side = src.side;
+            dst.blankLinesBefore = src.blankLinesBefore;
+            out.byPath.put(e.getKey(), dst);
+        }
+        out.header = header == null ? null : new ArrayList<>(header);
+        out.footer = footer == null ? null : new ArrayList<>(footer);
+        return out;
+    }
+
     /** An opaque, relocatable capture of one path subtree's comment overlay (see {@link #detachSubtree}). */
     public static final class Snapshot {
         private final Map<String, Entry> entries;

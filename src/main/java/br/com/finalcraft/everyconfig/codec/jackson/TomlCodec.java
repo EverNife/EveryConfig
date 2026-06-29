@@ -5,7 +5,6 @@ import br.com.finalcraft.everyconfig.codec.CodecException;
 import br.com.finalcraft.everyconfig.codec.CommentAware;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.ECMapperProfiles;
-import br.com.finalcraft.everyconfig.codec.ObjectMapperAware;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
@@ -33,9 +32,8 @@ import java.util.Set;
  * is recovered by a TEXT pass
  * ({@link #readComments}); comment text is stored WITHOUT the {@code #} prefix and re-added when emitting.
  */
-public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
+public final class TomlCodec implements Codec, CommentAware {
 
-    private static final char SEP = '.';
 
     /** One shared, isolated default mapper reused across every default-constructed instance. */
     private static final ObjectMapper DEFAULT = ECMapperProfiles.storageSafe(new TomlMapper());
@@ -68,7 +66,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
     }
 
     @Override
-    public ObjectMapper objectMapper() {
+    public ObjectMapper getObjectMapper() {
         return mapper;
     }
 
@@ -117,7 +115,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
         final CommentTree comments = parseComments(text);
         final JsonNode data = readTree(text);
         final KeyOrder order = (data instanceof ObjectNode)
-                ? KeyOrder.capture((ObjectNode) data, SEP)
+                ? KeyOrder.capture((ObjectNode) data)
                 : KeyOrder.empty();
         return new CommentLoad(comments, order);
     }
@@ -191,7 +189,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
         }
 
         for (final String key : scalars) {
-            final String p = DPath.joinSegment(path, key, SEP);
+            final String p = DPath.joinSegment(path, key);
             emitLeadingComments(p, out, comments);
             out.append(keyToken(key)).append(" = ").append(writeScalar(node.get(key)));
             final String side = comments.getComment(p, CommentType.SIDE);
@@ -202,7 +200,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
         }
 
         for (final String key : subSections) {
-            final String p = DPath.joinSegment(path, key, SEP);
+            final String p = DPath.joinSegment(path, key);
             final JsonNode v = node.get(key);
             emitLeadingComments(p, out, comments);
             if (v.isObject()) {
@@ -251,20 +249,18 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
 
     /** Captured key order first (for keys still present), then any live keys not in the snapshot. */
     private List<String> orderedFieldNames(final ObjectNode node, final String parentPath, final KeyOrder order) {
-        final List<String> result = new ArrayList<>();
         final Set<String> live = new LinkedHashSet<>();
         node.fieldNames().forEachRemaining(live::add);
+        // Captured order first, then any live keys not yet placed. A LinkedHashSet keeps membership O(1):
+        // an ArrayList.contains here was O(n²) and dominated the save of a node with many keys.
+        final LinkedHashSet<String> result = new LinkedHashSet<>(Math.max(16, live.size() * 2));
         for (final String k : order.orderedKeys(parentPath)) {
             if (live.contains(k)) {
                 result.add(k);
             }
         }
-        for (final String k : live) {
-            if (!result.contains(k)) {
-                result.add(k);
-            }
-        }
-        return result;
+        result.addAll(live);
+        return new ArrayList<>(result);
     }
 
     /**
@@ -347,7 +343,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
                 continue;
             }
             final String key = unquote(trimmed.substring(0, eq).trim());
-            final String path = DPath.joinSegment(currentTable, key, SEP);
+            final String path = DPath.joinSegment(currentTable, key);
             assignComments(tree, path, peelHeaderIfFirst(tree, pending, firstSeen));
             firstSeen = true;
             pending.clear();
@@ -439,7 +435,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
      *  {@code "a.b"}. The escape and the TOML quoting are separate layers: a dot inside a key is unescaped
      *  here and the segment is then quoted by TOML. */
     private String tablePath(final String internalPath) {
-        final String[] segments = DPath.split(internalPath, SEP); // literal segments (escapes resolved)
+        final String[] segments = DPath.split(internalPath); // literal segments (escapes resolved)
         final StringBuilder sb = new StringBuilder();
         for (int i = 0; i < segments.length; i++) {
             if (i > 0) {
@@ -478,7 +474,7 @@ public final class TomlCodec implements Codec, ObjectMapperAware, CommentAware {
         segments.add(cur.toString().trim());
         String path = "";
         for (final String seg : segments) {
-            path = DPath.joinSegment(path, seg, SEP);
+            path = DPath.joinSegment(path, seg);
         }
         return path;
     }
