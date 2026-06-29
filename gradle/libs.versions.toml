@@ -2,16 +2,18 @@
 # Project version - single source of truth (consumed by build.gradle).
 everyconfig = "1.0.1"
 
-# Jackson is the serialization engine; one BOM pin governs the whole family.
-jackson = "2.18.5"
-jetbrains-annotations = "24.1.0"
+# Jackson is the serialization engine; one BOM pin governs the whole family. Latest 2.x (Java 8 baseline);
+# Jackson 3 (tools.jackson.*, Java 17) would be a EveryConfig major, so it stays out of the 1.x line.
+jackson = "2.22.0"
+jetbrains-annotations = "26.1.0"
 # Lombok 1.18.42+ is required to run on a Java 25 toolchain.
-lombok = "1.18.42"
+lombok = "1.18.46"
 # Jabel lets a modern compiler emit Java 8 bytecode (fork that supports a Java 25 javac).
 jabel = "1.2.0"
-junit = "5.10.2"
-# The JUnit Platform launcher (Gradle 9 no longer provides it to test JVMs). 1.10.x pairs with Jupiter 5.10.x.
-junit-platform = "1.10.2"
+# JUnit 5.14.x is the last line with a Java 8 baseline (JUnit 6 requires Java 17), so it stays on the floor.
+junit = "5.14.4"
+# The JUnit Platform launcher (Gradle 9 no longer provides it to test JVMs). 1.14.x pairs with Jupiter 5.14.x.
+junit-platform = "1.14.4"
 
 [libraries]
 jackson-bom = { module = "com.fasterxml.jackson:jackson-bom", version.ref = "jackson" }
