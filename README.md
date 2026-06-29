@@ -344,14 +344,17 @@ export JAVA_HOME=/path/to/jdk-25      # PowerShell: $env:JAVA_HOME = "C:\path\to
 
 ./gradlew build                       # compile + run all tests on Java 25
 ./gradlew test -PtestJdk=8            # run the suite on the Java 8 runtime floor (also: 11, 17, 21)
+./gradlew test -Pstress              # opt-in stress & benchmark suite -> build/stress-report/<codec>.md
 ```
 
 > The codec-agnostic contract (`AbstractConfigTest`) runs the same body against all four codecs, so a
 > behavior is validated identically on YAML, JSON, TOML and JSONC. Residual files are written under
-> `build/test-residuals/` for inspection.
+> `build/test-residuals/` for inspection. The `-Pstress` suite (skipped by default) measures throughput,
+> the 100k-entity scale, concurrency and the lock-cost trade-off.
 
 **→ Deep dives: [Building from Source](https://github.com/EverNife/EveryConfig/wiki/Building-from-Source) ·
-[Running the Tests](https://github.com/EverNife/EveryConfig/wiki/Running-the-Tests)**
+[Running the Tests](https://github.com/EverNife/EveryConfig/wiki/Running-the-Tests) ·
+[Benchmarks](https://github.com/EverNife/EveryConfig/wiki/Benchmarks)**
 
 ---
 
