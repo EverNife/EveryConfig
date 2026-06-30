@@ -6,8 +6,12 @@ import br.com.finalcraft.everyconfig.annotation.KeyIndex;
 import br.com.finalcraft.everyconfig.annotation.Key;
 import br.com.finalcraft.everyconfig.annotation.KeyTransformCase;
 import br.com.finalcraft.everyconfig.annotation.PostLoad;
+import br.com.finalcraft.everyconfig.annotation.PostSave;
+import br.com.finalcraft.everyconfig.annotation.PreLoad;
+import br.com.finalcraft.everyconfig.annotation.PreSave;
 import br.com.finalcraft.everyconfig.annotation.Section;
 import br.com.finalcraft.everyconfig.binding.ConfigContext;
+import br.com.finalcraft.everyconfig.binding.ConfigLifecycle;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.binding.LoadIssueAware;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
@@ -21,6 +25,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -211,6 +216,13 @@ public final class Dtos {
         }
     }
 
+    /** A {@code @Section} field carrying a {@code @Comment}; the comment must land at the nested path. */
+    public static class SectionCommentedPojo {
+        @Section("db")
+        @Comment("the pool size")
+        public int poolSize = 5; // -> db.poolSize, with the comment at that nested path
+    }
+
     // ----- @KeyIndex collection elements -----
 
     /** String {@code @KeyIndex}. */
@@ -335,6 +347,61 @@ public final class Dtos {
         @Override
         public void setLoadIssues(final List<LoadIssue> issues) {
             this.received = issues;
+        }
+    }
+
+    // ----- lifecycle hooks (annotation + interface) -----
+
+    /** All four lifecycle hooks as method annotations; {@code trace} records each firing in order (transient
+     *  so the binder never serializes it). */
+    public static class LifecycleTrackedPojo {
+        public String name = "def";
+        public transient List<String> trace = new ArrayList<String>();
+
+        @PreLoad
+        void before() {
+            trace.add("preLoad:" + name); // name is still the default here (tree not applied yet)
+        }
+
+        @PostLoad
+        void after() {
+            trace.add("postLoad:" + name); // name now reflects the tree
+        }
+
+        @PreSave
+        void beforeSave() {
+            trace.add("preSave");
+        }
+
+        @PostSave
+        void afterSave() {
+            trace.add("postSave");
+        }
+    }
+
+    /** The opt-in {@link ConfigLifecycle} interface; each callback records the section path it was handed. */
+    public static class LifecycleInterfacePojo implements ConfigLifecycle {
+        public String name = "def";
+        public transient List<String> calls = new ArrayList<String>();
+
+        @Override
+        public void preLoad(final ConfigContext context) {
+            calls.add("preLoad@" + context.section().getPath());
+        }
+
+        @Override
+        public void postLoad(final ConfigContext context) {
+            calls.add("postLoad@" + context.section().getPath());
+        }
+
+        @Override
+        public void preSave(final ConfigContext context) {
+            calls.add("preSave@" + context.section().getPath());
+        }
+
+        @Override
+        public void postSave(final ConfigContext context) {
+            calls.add("postSave@" + context.section().getPath());
         }
     }
 
