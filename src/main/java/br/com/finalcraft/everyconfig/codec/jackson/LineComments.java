@@ -17,9 +17,21 @@ final class LineComments {
     }
 
     /** Prefix a stored (prefix-less) comment line with {@code marker}; an empty line becomes the bare marker,
-     *  so a blank line inside a header/footer round-trips instead of reading as the separator. */
+     *  so a blank line inside a header/footer round-trips instead of reading as the separator. Trailing
+     *  whitespace is dropped here so the emitted comment is already in the canonical form the parser would
+     *  read it back as (it captures lines via {@code trim()}); this keeps write -> read -> write stable. */
     static String prefix(final String marker, final String line) {
-        return line.isEmpty() ? marker : marker + " " + line;
+        final String trimmed = rstrip(line);
+        return trimmed.isEmpty() ? marker : marker + " " + trimmed;
+    }
+
+    /** Drop trailing whitespace from a single line (no Java-8 String API does this). */
+    private static String rstrip(final String s) {
+        int end = s.length();
+        while (end > 0 && Character.isWhitespace(s.charAt(end - 1))) {
+            end--;
+        }
+        return end == s.length() ? s : s.substring(0, end);
     }
 
     /** Strip a leading {@code marker} (and one following space) from a single comment line. */

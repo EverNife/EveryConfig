@@ -25,6 +25,14 @@ class LineCommentsTest {
     }
 
     @Test
+    void prefixDropsTrailingWhitespace() {
+        // emit in canonical form (the parser reads lines back trimmed), so write -> read -> write is stable
+        assertEquals("# hi", LineComments.prefix("#", "hi   "));                 // trailing dropped
+        assertEquals("//   indented", LineComments.prefix("//", "  indented  ")); // leading kept, trailing dropped
+        assertEquals("#", LineComments.prefix("#", "    "));                     // all-blank -> bare marker
+    }
+
+    @Test
     void extractBlockLinesDropsOuterBlanksAndStripsMarkers() {
         assertEquals(Arrays.asList("a", "", "b"),
                 LineComments.extractBlockLines("#", Arrays.asList("", "# a", "#", "# b", "")));
