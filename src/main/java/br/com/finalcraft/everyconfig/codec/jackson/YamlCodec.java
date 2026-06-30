@@ -520,12 +520,10 @@ public final class YamlCodec implements Codec, CommentAware {
         return LineComments.prefix("#", line);
     }
 
-    /** Render a stored (prefix-less) side comment as the trailing {@code " # ..."} segment. */
+    /** Render a stored (prefix-less) side comment as the trailing {@code " # ..."} segment; trailing
+     *  whitespace is dropped (via the shared prefixer), like every emitted comment. */
     private static String sideText(final String stored) {
-        if (stored == null) {
-            return null;
-        }
-        return " # " + stored;
+        return stored == null ? null : " " + prefixComment(stored);
     }
 
     /** Strip the leading {@code #} (and one following space) from a single comment line. */
