@@ -391,33 +391,11 @@ public final class TomlCodec implements Codec, CommentAware {
     }
 
     private static int headerBoundary(final List<String> pending) {
-        boolean sawComment = false;
-        for (int i = 0; i < pending.size(); i++) {
-            if (pending.get(i).isEmpty()) {
-                if (sawComment) {
-                    return i;
-                }
-            } else {
-                sawComment = true;
-            }
-        }
-        return -1;
+        return LineComments.headerBoundary(pending);
     }
 
     private static List<String> extractBlockLines(final List<String> raw) {
-        int start = 0;
-        int end = raw.size();
-        while (start < end && raw.get(start).isEmpty()) {
-            start++;
-        }
-        while (end > start && raw.get(end - 1).isEmpty()) {
-            end--;
-        }
-        final List<String> out = new ArrayList<>();
-        for (int i = start; i < end; i++) {
-            out.add(stripComment(raw.get(i)));
-        }
-        return out;
+        return LineComments.extractBlockLines("#", raw);
     }
 
     // ---- token / path helpers ------------------------------------------
@@ -546,17 +524,10 @@ public final class TomlCodec implements Codec, CommentAware {
     }
 
     private static String prefixComment(final String line) {
-        return line.isEmpty() ? "#" : "# " + line;
+        return LineComments.prefix("#", line);
     }
 
     private static String stripComment(final String line) {
-        String s = line;
-        if (s.startsWith("#")) {
-            s = s.substring(1);
-        }
-        if (s.startsWith(" ")) {
-            s = s.substring(1);
-        }
-        return s;
+        return LineComments.strip("#", line);
     }
 }

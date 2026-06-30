@@ -503,50 +503,21 @@ public final class YamlCodec implements Codec, CommentAware {
         }
     }
 
-    /**
-     * Index in {@code pending} of the blank line that separates a file header from the first key's own
-     * block — the first blank line that follows at least one comment line — or -1 when the leading
-     * comments run straight into the key (so there is no header).
-     */
+    /** Index of the blank line separating the file header from the first key's block, or -1 (shared helper). */
     private static int headerBoundary(final List<String> pending) {
-        boolean sawComment = false;
-        for (int i = 0; i < pending.size(); i++) {
-            if (pending.get(i).isEmpty()) {
-                if (sawComment) {
-                    return i;
-                }
-            } else {
-                sawComment = true;
-            }
-        }
-        return -1;
+        return LineComments.headerBoundary(pending);
     }
 
     /** Drop leading/trailing blank lines, strip the {@code #} marker from each remaining line. */
     private static List<String> extractBlockLines(final List<String> raw) {
-        int start = 0;
-        int end = raw.size();
-        while (start < end && raw.get(start).isEmpty()) {
-            start++;
-        }
-        while (end > start && raw.get(end - 1).isEmpty()) {
-            end--;
-        }
-        final List<String> out = new ArrayList<>();
-        for (int i = start; i < end; i++) {
-            out.add(stripComment(raw.get(i)));
-        }
-        return out;
+        return LineComments.extractBlockLines("#", raw);
     }
 
     // ---- comment formatting helpers ------------------------------------
 
-    /** Add a {@code #} prefix to a stored (prefix-less) block comment line. */
+    /** Add a {@code #} prefix to a stored (prefix-less) comment line (shared line-comment logic). */
     private static String prefixComment(final String line) {
-        if (line.isEmpty()) {
-            return "#";
-        }
-        return "# " + line;
+        return LineComments.prefix("#", line);
     }
 
     /** Render a stored (prefix-less) side comment as the trailing {@code " # ..."} segment. */
@@ -559,14 +530,7 @@ public final class YamlCodec implements Codec, CommentAware {
 
     /** Strip the leading {@code #} (and one following space) from a single comment line. */
     private static String stripComment(final String line) {
-        String s = line;
-        if (s.startsWith("#")) {
-            s = s.substring(1);
-        }
-        if (s.startsWith(" ")) {
-            s = s.substring(1);
-        }
-        return s;
+        return LineComments.strip("#", line);
     }
 
     // ---- low-level text helpers ----------------------------------------

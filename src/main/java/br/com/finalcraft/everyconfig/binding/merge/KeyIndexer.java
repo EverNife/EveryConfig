@@ -1,4 +1,5 @@
 package br.com.finalcraft.everyconfig.binding.merge;
+import br.com.finalcraft.everyconfig.annotation.KeyIndex;
 import br.com.finalcraft.everyconfig.binding.BindException;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.binding.schema.BindingNames;
@@ -29,20 +30,37 @@ public final class KeyIndexer {
     private KeyIndexer() {
     }
 
+    /** True when {@code type} declares at least one {@code @KeyIndex} field — the signal that a collection of
+     *  it serializes key-major. {@link #toIndexed} then validates there is exactly one. */
+    public static boolean isKeyIndexed(final Class<?> type) {
+        for (final Field f : BindingNames.allFields(type)) {
+            if (f.isAnnotationPresent(KeyIndex.class)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static ObjectNode toIndexed(final Collection<?> collection, final ObjectMapper mapper) {
         final ObjectNode out = mapper.getNodeFactory().objectNode();
         for (final Object entity : collection) {
             final Field id = BindingNames.requireSingleKeyIndex(entity.getClass());
             final Object idValue = read(id, entity);
-            if (idValue == null || String.valueOf(idValue).isEmpty()) {
-                throw new BindException("@KeyIndex of " + entity.getClass().getSimpleName() + " is null or empty");
+            final String key = idValue == null ? null : String.valueOf(idValue);
+            if (key == null || key.trim().isEmpty()) { // a blank id makes a useless/confusing section name
+                throw new BindException("@KeyIndex of " + entity.getClass().getSimpleName() + " is null or blank");
+            }
+            // Two elements sharing an id would silently collapse into one section; reject it instead.
+            if (out.has(key)) {
+                throw new BindException("duplicate @KeyIndex value '" + key + "' in the collection of "
+                        + entity.getClass().getSimpleName() + "; @KeyIndex values must be unique");
             }
             final JsonNode body = mapper.valueToTree(entity);
             if (body instanceof ObjectNode) {
                 // Strip the id under the SAME key the mapper emitted it as (the section key already carries it).
                 ((ObjectNode) body).remove(resolvedIdKey(entity.getClass(), id, mapper));
             }
-            out.set(String.valueOf(idValue), body);
+            out.set(key, body);
         }
         return out;
     }
@@ -58,14 +76,22 @@ public final class KeyIndexer {
         while (it.hasNext()) {
             final Map.Entry<String, JsonNode> e = it.next();
             final String sectionKey = e.getKey();
-            final T entity = mapper.convertValue(e.getValue(), type);
-            final Object bodyId = read(id, entity);
-            if (bodyId != null && !String.valueOf(bodyId).equals(sectionKey)) {
-                issues.add(new LoadIssue(sectionKey, bodyId, id.getType(),
-                        "id in the entity body disagrees with the section key; the section key wins"));
+            // Lenient, like every other read path: a single bad entry (an unbindable body, or a section key
+            // that cannot be cast to the id type — e.g. a corrupted UUID) is recorded and skipped, never
+            // failing the whole read.
+            try {
+                final T entity = mapper.convertValue(e.getValue(), type);
+                final Object bodyId = read(id, entity);
+                if (bodyId != null && !String.valueOf(bodyId).equals(sectionKey)) {
+                    issues.add(new LoadIssue(sectionKey, bodyId, id.getType(),
+                            "id in the entity body disagrees with the section key; the section key wins"));
+                }
+                write(id, entity, castKey(sectionKey, id.getType()));
+                out.add(entity);
+            } catch (final RuntimeException badEntry) {
+                issues.add(new LoadIssue(sectionKey, null, type,
+                        "could not read @KeyIndex entry '" + sectionKey + "': " + badEntry.getMessage()));
             }
-            write(id, entity, castKey(sectionKey, id.getType()));
-            out.add(entity);
         }
         return out;
     }

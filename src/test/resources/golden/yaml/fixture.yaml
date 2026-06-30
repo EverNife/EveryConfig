@@ -12,5 +12,10 @@ tags:
   - alpha
   - beta
   - gamma
+accounts:
+  alice:
+    balance: 100
+  bob:
+    balance: 50
 
 # end of fixture
