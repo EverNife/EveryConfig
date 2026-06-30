@@ -17,6 +17,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Converts between a collection of {@code @KeyIndex}-bearing entities and a key-major layout:
@@ -27,12 +28,20 @@ import java.util.UUID;
  */
 public final class KeyIndexer {
 
+    /** Whether each class declares a {@code @KeyIndex} field, resolved once per class — this is checked on
+     *  every {@code setValue}/{@code getList} of a collection, so it must not re-walk the hierarchy each time. */
+    private static final ConcurrentHashMap<Class<?>, Boolean> KEY_INDEXED = new ConcurrentHashMap<>();
+
     private KeyIndexer() {
     }
 
     /** True when {@code type} declares at least one {@code @KeyIndex} field — the signal that a collection of
-     *  it serializes key-major. {@link #toIndexed} then validates there is exactly one. */
+     *  it serializes key-major. {@link #toIndexed} then validates there is exactly one. Cached per class. */
     public static boolean isKeyIndexed(final Class<?> type) {
+        return KEY_INDEXED.computeIfAbsent(type, KeyIndexer::scanIsKeyIndexed);
+    }
+
+    private static boolean scanIsKeyIndexed(final Class<?> type) {
         for (final Field f : BindingNames.allFields(type)) {
             if (f.isAnnotationPresent(KeyIndex.class)) {
                 return true;
