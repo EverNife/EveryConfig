@@ -286,21 +286,24 @@ DbConfig db = cfg.loadAs(DbConfig.class, codec);    // lenient by default
 ## `@KeyIndex` collections
 
 A `Collection<T>` whose element carries a `@KeyIndex` field serializes as a section keyed by that field's
-value (it is omitted from the body; on read the section key is the sole authority).
+value (it is omitted from the body; on read the section key is the sole authority). It is **automatic** —
+`setValue` and `getList` detect the `@KeyIndex` and use the keyed layout; there are no special methods.
 
 ```java
 class Account { @KeyIndex String name; int balance; /* ... */ }
 
-cfg.writeKeyIndexCollection("accounts", Arrays.asList(
-        new Account("alice", 100), new Account("bob", 50)), codec);
+cfg.setValue("accounts", Arrays.asList(
+        new Account("alice", 100), new Account("bob", 50)));   // auto key-major
 // accounts:
 //   alice: { balance: 100 }
 //   bob:   { balance: 50 }
 
-List<Account> back = cfg.readKeyIndexCollection("accounts", Account.class, codec);
+List<Account> back = cfg.getList("accounts", Account.class);   // ids restored from the section keys
 ```
 
-`@KeyIndex` may be `String`, a boxed/primitive numeric, `boolean` or `UUID`.
+`@KeyIndex` may be `String`, a boxed/primitive numeric, `boolean` or `UUID`. A duplicate index value (or a
+type with two `@KeyIndex` fields) throws a `BindException` on write; `getListResult(path, type)` returns the
+list together with any read issues (e.g. a stray body id that disagreed with its section key).
 
 **→ Deep dive: [`@KeyIndex` Collections](https://github.com/EverNife/EveryConfig/wiki/KeyIndex-Collections)**
 

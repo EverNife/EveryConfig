@@ -12,6 +12,7 @@ import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.config.Config;
 import br.com.finalcraft.everyconfig.config.section.ConfigSection;
+import br.com.finalcraft.everyconfig.core.coerce.TypeFamily;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
 import br.com.finalcraft.everyconfig.core.tree.DPath;
@@ -27,11 +28,9 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -77,9 +76,11 @@ public final class EntityBinder<T> {
             this.sectionValue = sectionValue;
         }
 
-        /** Where the field's value lands within its owner, e.g. {@code "database.pool.max-size"}. */
+        /** Where the field's value lands within its owner, e.g. {@code "database.pool.max-size"}. The
+         *  {@code @Section} value is already dotted path-form; the flat key is escaped so a dot inside it
+         *  stays part of the key. */
         String relativePath() {
-            return sectionValue + "." + flatKey;
+            return DPath.joinSegment(sectionValue, flatKey);
         }
     }
 
@@ -105,7 +106,7 @@ public final class EntityBinder<T> {
                 continue; // a sectioned field is not descended into (nested-within-section is out of scope)
             }
             if (isBindablePojo(f.getType())) {
-                collectSectionFields(f.getType(), ownerPath.isEmpty() ? key : ownerPath + "." + key, onPath, out);
+                collectSectionFields(f.getType(), DPath.joinSegment(ownerPath, key), onPath, out);
             }
         }
         onPath.remove(raw);
@@ -113,14 +114,7 @@ public final class EntityBinder<T> {
 
     /** Whether a type should be walked for nested {@code @Section} fields (a user POJO, not a JDK/container). */
     private static boolean isBindablePojo(final Class<?> c) {
-        if (c == null || c.isPrimitive() || c.isArray() || c.isEnum()) {
-            return false;
-        }
-        if (Map.class.isAssignableFrom(c) || Collection.class.isAssignableFrom(c)) {
-            return false;
-        }
-        final String n = c.getName();
-        return !(n.startsWith("java.") || n.startsWith("javax.") || n.startsWith("jdk."));
+        return TypeFamily.isUserPojoType(c);
     }
 
     ObjectMapper mapper() {
@@ -293,7 +287,7 @@ public final class EntityBinder<T> {
 
     private static JsonNode getAtPath(final ObjectNode root, final String dotted) {
         JsonNode cur = root;
-        for (final String seg : dotted.split("\\.")) {
+        for (final String seg : DPath.split(dotted)) {
             if (!(cur instanceof ObjectNode)) {
                 return null;
             }
@@ -306,7 +300,7 @@ public final class EntityBinder<T> {
     }
 
     private void setAtPath(final ObjectNode root, final String dotted, final JsonNode value) {
-        final String[] segs = dotted.split("\\.");
+        final String[] segs = DPath.split(dotted);
         ObjectNode cur = root;
         for (int i = 0; i < segs.length - 1; i++) {
             final JsonNode next = cur.get(segs[i]);
@@ -349,7 +343,7 @@ public final class EntityBinder<T> {
             final Section sec = f.getAnnotation(Section.class);
             String fieldPath = "";
             if (sec != null && !sec.value().isEmpty()) {
-                for (final String seg : sec.value().split("\\.")) { // @Section spells nesting with '.'
+                for (final String seg : DPath.split(sec.value())) { // @Section spells nesting with '.'
                     fieldPath = DPath.joinSegment(fieldPath, seg);
                 }
             }

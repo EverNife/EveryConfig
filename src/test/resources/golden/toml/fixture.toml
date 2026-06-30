@@ -8,5 +8,10 @@ tags = ['alpha', 'beta', 'gamma']
 [server]
 host = 'localhost'
 port = 25565 # listen port
+[accounts]
+[accounts.alice]
+balance = 100
+[accounts.bob]
+balance = 50
 
 # end of fixture

@@ -17,6 +17,7 @@ import br.com.finalcraft.everyconfig.codec.jackson.InMemoryCodec;
 import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.coerce.NodeCoercion;
+import br.com.finalcraft.everyconfig.core.coerce.TypeFamily;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
 import br.com.finalcraft.everyconfig.core.tree.DPath;
@@ -79,7 +80,6 @@ public class Config implements AutoCloseable {
     // only default-seeding, so a caller can tell "I completed an old file with new keys" apart from "a
     // value was edited". (Not serialized state — a Config is never serialized.)
     private boolean newDefaultValueToSave = false;
-    private List<LoadIssue> lastKeyIndexCollectionIssues = Collections.emptyList();
 
     public Config() {
         this(JsonNodeFactory.instance.objectNode(), new CommentTree(), KeyOrder.empty());
@@ -182,43 +182,6 @@ public class Config implements AutoCloseable {
         return (idx < 0 || idx >= arr.size()) ? -1 : idx;
     }
 
-    private static final class ParentAndKey {
-        final ObjectNode parent;
-        final String key;
-
-        ParentAndKey(final ObjectNode parent, final String key) {
-            this.parent = parent;
-            this.key = key;
-        }
-    }
-
-    /** Write navigation: walks to the leaf's parent, creating intermediate objects as needed. Only
-     *  ever mints ObjectNodes — a numeric segment never grows an array on the write path. */
-    private ParentAndKey vivify(final String path) {
-        final String[] segs = DPath.split(path);
-        if (segs.length == 0) {
-            throw new IllegalArgumentException("cannot set the root path as a leaf value");
-        }
-        ObjectNode cur = root;
-        final StringBuilder prefix = new StringBuilder();
-        for (int i = 0; i < segs.length - 1; i++) {
-            if (prefix.length() > 0) {
-                prefix.append(DPath.SEP);
-            }
-            prefix.append(DPath.escapeSegment(segs[i])); // a dot inside the key stays escaped in the path key
-            final JsonNode next = cur.get(segs[i]);
-            if (next instanceof ObjectNode) {
-                cur = (ObjectNode) next;
-            } else {
-                final ObjectNode created = nodes.objectNode();
-                cur.set(segs[i], created);
-                comments.removeSubtree(prefix.toString()); // replaced subtree's comments no longer apply
-                cur = created;
-            }
-        }
-        return new ParentAndKey(cur, segs[segs.length - 1]);
-    }
-
     // ==================== set / remove ====================
 
     /**
@@ -236,6 +199,14 @@ public class Config implements AutoCloseable {
             } else {
                 removeValue(path);
             }
+            return;
+        }
+        // A collection whose element type carries @KeyIndex serializes key-major (a section keyed by the id),
+        // not as a plain array. It needs the codec mapper for the element bodies; @KeyIndex values must be
+        // unique (KeyIndexer throws otherwise). An empty collection has no element to classify, so it falls
+        // through and stores a plain empty array.
+        if (codec != null && value instanceof Collection && isKeyIndexedCollection((Collection<?>) value)) {
+            setValue(path, KeyIndexer.toIndexed((Collection<?>) value, codec.getObjectMapper()));
             return;
         }
         final JsonNode node = coercion.toNode(value);
@@ -257,32 +228,32 @@ public class Config implements AutoCloseable {
             setRoot(value);
             return;
         }
-        if (DPath.hasBracket(path)) {
-            setValueBracketed(path, node);
-            return;
-        }
-        final ParentAndKey pk = vivify(path);
-        final JsonNode existing = pk.parent.get(pk.key);
-        if (existing != null && existing.isContainerNode()) {
-            comments.removeSubtree(path); // replacing a subtree drops its descendants' comments
-        }
-        pk.parent.set(pk.key, node);
-        dirty = true;
+        setLeafValue(path, node);
     }
 
     /** True when {@code value} is a genuine entity to merge — not a {@code Map} or {@link JsonNode}, which
      *  also serialize to an object but must be set raw (no schema to merge against). */
     private static boolean isEntityValue(final Object value) {
-        return !(value instanceof JsonNode || value instanceof Map);
+        return !TypeFamily.isPreformedNodeOrMap(value);
+    }
+
+    /** True when {@code collection}'s element type carries {@code @KeyIndex} (classified from the first
+     *  non-null element, assuming a homogeneous collection); an empty collection is not indexed. */
+    private static boolean isKeyIndexedCollection(final Collection<?> collection) {
+        for (final Object e : collection) {
+            return e != null && KeyIndexer.isKeyIndexed(e.getClass());
+        }
+        return false;
     }
 
     /**
-     * Bracket-path write: set the leaf addressed by a path that uses {@code [n]} grammar. Intermediate
-     * objects are minted as on the dotted path, but an array is never grown — a bracket index must
-     * address an element that already exists (negative counts from the end). Out-of-bounds or a bracket
-     * index into a non-array throws, mirroring the "{@code vivify} never grows an array" invariant.
+     * Set the leaf at {@code path}, handling both the dotted and the {@code [n]} bracket grammar through one
+     * walk. Missing intermediate keys are minted as objects, but an array is never grown — a bracket index
+     * must address an element that already exists (negative counts from the end). Out-of-bounds, a bracket
+     * index into a non-array, or a (dotted) key segment landing on an array intermediate all throw rather
+     * than silently grow or clobber a container.
      */
-    private void setValueBracketed(final String path, final JsonNode node) {
+    private void setLeafValue(final String path, final JsonNode node) {
         final List<DPath.Seg> segs = DPath.parse(path);
         final StringBuilder parentDotted = new StringBuilder();
         final JsonNode parent = walkToParent(segs, true, parentDotted, path);
@@ -421,27 +392,12 @@ public class Config implements AutoCloseable {
             comments.removeSubtree("");
             return true;
         }
-        if (DPath.hasBracket(path)) {
-            return removeValueBracketed(path);
-        }
-        final JsonNode parent = resolve(DPath.parent(path));
-        final String leaf = DPath.leaf(path);
-        boolean removed = false;
-        if (parent instanceof ObjectNode) {
-            removed = ((ObjectNode) parent).remove(leaf) != null;
-        } else if (parent instanceof ArrayNode && DPath.isIndex(leaf)) {
-            ((ArrayNode) parent).remove(Integer.parseInt(leaf));
-            removed = true;
-        }
-        if (removed) {
-            comments.removeSubtree(path);
-            dirty = true;
-        }
-        return removed;
+        return removeLeafValue(path);
     }
 
-    /** Bracket-path remove: drop the element/key addressed by a path that uses {@code [n]} grammar. */
-    private boolean removeValueBracketed(final String path) {
+    /** Remove the element/key at {@code path}, handling both the dotted and the {@code [n]} bracket grammar
+     *  through one walk. */
+    private boolean removeLeafValue(final String path) {
         final List<DPath.Seg> segs = DPath.parse(path);
         final StringBuilder parentDotted = new StringBuilder();
         final JsonNode parent = walkToParent(segs, false, parentDotted, path);
@@ -589,12 +545,44 @@ public class Config implements AutoCloseable {
 
     /** As {@link #getList(String, Class)}, binding through an explicitly supplied {@code codec}. */
     public <T> List<T> getList(final String path, final Class<T> elementType, final Codec codec) {
-        final List<T> out = new ArrayList<>();
+        return readList(path, elementType, codec, null);
+    }
+
+    /**
+     * As {@link #getList(String, Class)}, returning the list together with any {@link LoadIssue}s collected —
+     * the issues a bare {@link #getList} discards. The relevant case is a {@code @KeyIndex}-indexed read where
+     * an element's body id disagreed with its section key (the section key wins, the disagreement is recorded).
+     */
+    public <T> BindResult<List<T>> getListResult(final String path, final Class<T> elementType) {
+        return getListResult(path, elementType, requireCodec());
+    }
+
+    /** As {@link #getListResult(String, Class)}, binding through an explicitly supplied {@code codec}. */
+    public <T> BindResult<List<T>> getListResult(final String path, final Class<T> elementType, final Codec codec) {
+        final List<LoadIssue> issues = new ArrayList<>();
+        final List<T> out = readList(path, elementType, codec, issues);
+        return new BindResult<>(out, issues);
+    }
+
+    /**
+     * Read the list at {@code path}. When {@code elementType} carries {@code @KeyIndex} AND the stored node is
+     * an object, it is read as a key-major section (the section key is the id authority); otherwise it is read
+     * as a plain array. Lenient: an unbindable array element is skipped, and an indexed element whose body id
+     * disagrees with its section key is reconciled to the key. {@code issues}, when non-null, collects the
+     * indexed-read reconciliations.
+     */
+    private <T> List<T> readList(final String path, final Class<T> elementType, final Codec codec,
+                                final List<LoadIssue> issues) {
         final JsonNode node = getNode(path);
+        final ObjectMapper mapper = codec.getObjectMapper();
+        if (node instanceof ObjectNode && KeyIndexer.isKeyIndexed(elementType)) {
+            final List<LoadIssue> sink = issues != null ? issues : new ArrayList<LoadIssue>();
+            return KeyIndexer.fromIndexed(node, elementType, mapper, sink);
+        }
+        final List<T> out = new ArrayList<>();
         if (!(node instanceof ArrayNode)) {
             return out;
         }
-        final ObjectMapper mapper = codec.getObjectMapper();
         for (final JsonNode element : node) {
             try {
                 out.add(mapper.convertValue(element, elementType));
@@ -933,8 +921,7 @@ public class Config implements AutoCloseable {
 
     /** True for a default whose existing value is read back by scalar coercion rather than entity binding. */
     private static boolean isScalarDefault(final Object def) {
-        return def instanceof Number || def instanceof CharSequence || def instanceof Boolean
-                || def instanceof Character || def instanceof Enum;
+        return TypeFamily.isNativeScalar(def);
     }
 
     private void seedCommentIfAbsent(final String path, final String comment) {
@@ -950,6 +937,8 @@ public class Config implements AutoCloseable {
         }
     }
 
+    /** A {@code void} alias for {@link #getOrSetValueIfAbsent(String, Object)} — same seed-if-absent
+     *  behavior, for callers that only want to ensure a default exists and do not need the returned value. */
     public void setValueIfAbsent(final String path, final Object value) {
         getOrSetValueIfAbsent(path, value);
     }
@@ -1039,40 +1028,6 @@ public class Config implements AutoCloseable {
         final EntityBinder binder = bind(pojo.getClass(), codec);
         binder.write(path, pojo);
         dirty = true; // the binder mutated the tree/comments directly, so flag a pending save
-    }
-
-    /** Store a collection of {@code @KeyIndex}-bearing entities at {@code path} as a section keyed by the
-     *  index value. */
-    public void writeKeyIndexCollection(final String path, final Collection<?> collection, final Codec codec) {
-        final ObjectMapper mapper = codec.getObjectMapper();
-        setValue(path, KeyIndexer.toIndexed(collection, mapper));
-    }
-
-    /** Read a {@code @KeyIndex}-indexed section at {@code path} back into a list, restoring each element's
-     *  index value from its section key. */
-    public <T> List<T> readKeyIndexCollection(final String path, final Class<T> elementType, final Codec codec) {
-        return readKeyIndexCollectionResult(path, elementType, codec).value();
-    }
-
-    /**
-     * As {@link #readKeyIndexCollection}, but returns the list together with the {@link LoadIssue}s collected
-     * for this read (e.g. a body index value disagreeing with its section key), sourced from the local list
-     * so a later read does not race the result.
-     */
-    public <T> BindResult<List<T>> readKeyIndexCollectionResult(final String path, final Class<T> elementType,
-                                                                final Codec codec) {
-        final ObjectMapper mapper = codec.getObjectMapper();
-        final List<LoadIssue> issues = new ArrayList<>();
-        final List<T> out = KeyIndexer.fromIndexed(getNode(path), elementType, mapper, issues);
-        this.lastKeyIndexCollectionIssues = Collections.unmodifiableList(issues);
-        return new BindResult<>(out, issues);
-    }
-
-    /** Issues recorded by the most recent {@link #readKeyIndexCollection} (e.g. a body index value
-     *  disagreeing with its section key); {@link #readKeyIndexCollectionResult} returns the same issues
-     *  alongside the list. */
-    public List<LoadIssue> lastKeyIndexCollectionIssues() {
-        return lastKeyIndexCollectionIssues;
     }
 
     // ==================== save-defaults bookkeeping ====================
@@ -1256,10 +1211,6 @@ public class Config implements AutoCloseable {
         this.dirty = false;
     }
 
-    private byte[] encode() {
-        return encodeWith(codec, backStore.charset());
-    }
-
     /** Encode the tree (with comments + key order) through {@code codec}, using {@code charset} for the
      *  text→bytes step. The comment emitter is used only when the codec round-trips comments.
      *
@@ -1293,19 +1244,7 @@ public class Config implements AutoCloseable {
     /** Encodes the tree (with comments + key order) and writes it atomically; serialized per-Config. */
     public void save() {
         requireBackStore();
-        lock.lock();
-        try {
-            final BackStore.Fingerprint written = backStore.writeAtomic(encode());
-            loaded = written;
-            if (watcher != null) {
-                watcher.refreshSnapshot(written);
-            }
-            dirty = false;
-        } catch (final IOException e) {
-            throw new ConfigIOException("failed to save " + backStore.describe(), e);
-        } finally {
-            lock.unlock();
-        }
+        doSave(codec, backStore.charset());
     }
 
     /**
@@ -1317,9 +1256,16 @@ public class Config implements AutoCloseable {
      */
     public void save(final Codec codec) {
         requireBackStore();
+        doSave(codec, codec.charset());
+    }
+
+    /** The shared save body: under the per-Config lock, encode through {@code codec}/{@code charset} (the
+     *  encode stays inside the lock so concurrent saves serialize against the latest tree) and write
+     *  atomically, refreshing the loaded fingerprint and any watcher snapshot. */
+    private void doSave(final Codec codec, final Charset charset) {
         lock.lock();
         try {
-            final BackStore.Fingerprint written = backStore.writeAtomic(encodeWith(codec, codec.charset()));
+            final BackStore.Fingerprint written = backStore.writeAtomic(encodeWith(codec, charset));
             loaded = written;
             if (watcher != null) {
                 watcher.refreshSnapshot(written);

@@ -429,41 +429,19 @@ public final class JsoncCodec implements Codec, CommentAware {
 
     /** Drop leading/trailing blank lines, strip the {@code //} marker from each remaining line. */
     private static List<String> extractBlockLines(final List<String> raw) {
-        int start = 0;
-        int end = raw.size();
-        while (start < end && raw.get(start).isEmpty()) {
-            start++;
-        }
-        while (end > start && raw.get(end - 1).isEmpty()) {
-            end--;
-        }
-        final List<String> out = new ArrayList<>();
-        for (int i = start; i < end; i++) {
-            out.add(stripComment(raw.get(i)));
-        }
-        return out;
+        return LineComments.extractBlockLines("//", raw);
     }
 
     // ---- comment formatting + low-level helpers ------------------------
 
     /** Add a {@code //} prefix to a stored (prefix-less) comment line. */
     private static String prefixComment(final String line) {
-        if (line.isEmpty()) {
-            return "//";
-        }
-        return "// " + line;
+        return LineComments.prefix("//", line);
     }
 
     /** Strip the leading {@code //} (and one following space) from a single comment line. */
     private static String stripComment(final String line) {
-        String s = line;
-        if (s.startsWith("//")) {
-            s = s.substring(2);
-        }
-        if (s.startsWith(" ")) {
-            s = s.substring(1);
-        }
-        return s;
+        return LineComments.strip("//", line);
     }
 
     /** Index of the ':' that separates a leading {@code "key"} from its value, or -1. */
