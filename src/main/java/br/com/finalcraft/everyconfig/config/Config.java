@@ -714,6 +714,100 @@ public class Config implements AutoCloseable {
         return comments.getComment(path, type);
     }
 
+    // ==================== header / footer ====================
+
+    /**
+     * Sets the file header — the prefix-less comment block emitted above the first key — overwriting any
+     * existing one. Each argument may contain {@code \n} (split into lines), so an ASCII-art text block can
+     * be passed as a single argument; no arguments clears it. An empty interior line round-trips as a bare
+     * comment line ({@code #}/{@code //}) — the only truly blank line in the file is the separator before the
+     * first key, so the header never swallows the first key's own comment. Held in memory but never written
+     * on a NONE-fidelity codec (e.g. JSON). Returns {@code this} for chaining.
+     */
+    public Config setHeader(final String... lines) {
+        comments.setHeader(flattenCommentLines(lines));
+        dirty = true;
+        return this;
+    }
+
+    /** Sets the header only when none exists yet (a user-written header wins) — the set-if-absent
+     *  counterpart of {@link #setHeader}; flags a seeded default like {@link #setDefaultComment}. */
+    public Config setDefaultHeader(final String... lines) {
+        if (getHeader().isEmpty()) {
+            final List<String> flat = flattenCommentLines(lines);
+            if (!flat.isEmpty()) {
+                comments.setHeader(flat);
+                dirty = true;
+                newDefaultValueToSave = true;
+            }
+        }
+        return this;
+    }
+
+    /** The file header lines (prefix-less); empty (never null) when absent. */
+    public List<String> getHeader() {
+        return comments.getHeader();
+    }
+
+    /** Clears the file header. Returns {@code this}. */
+    public Config clearHeader() {
+        comments.setHeader(null);
+        dirty = true;
+        return this;
+    }
+
+    /** As {@link #setHeader}, for the footer comment block emitted below the last key. */
+    public Config setFooter(final String... lines) {
+        comments.setFooter(flattenCommentLines(lines));
+        dirty = true;
+        return this;
+    }
+
+    /** As {@link #setDefaultHeader}, for the footer. */
+    public Config setDefaultFooter(final String... lines) {
+        if (getFooter().isEmpty()) {
+            final List<String> flat = flattenCommentLines(lines);
+            if (!flat.isEmpty()) {
+                comments.setFooter(flat);
+                dirty = true;
+                newDefaultValueToSave = true;
+            }
+        }
+        return this;
+    }
+
+    /** The file footer lines (prefix-less); empty (never null) when absent. */
+    public List<String> getFooter() {
+        return comments.getFooter();
+    }
+
+    /** Clears the file footer. Returns {@code this}. */
+    public Config clearFooter() {
+        comments.setFooter(null);
+        dirty = true;
+        return this;
+    }
+
+    /** Flatten header/footer varargs into prefix-less lines: each argument is split on newlines (CR/LF
+     *  normalized), so a multi-line text block becomes one line per row and an empty line is kept as a blank
+     *  line; a null argument is skipped. No arguments yields an empty list (which clears the block). */
+    private static List<String> flattenCommentLines(final String... lines) {
+        if (lines == null || lines.length == 0) {
+            return Collections.emptyList();
+        }
+        final List<String> out = new ArrayList<>();
+        for (final String line : lines) {
+            if (line == null) {
+                continue;
+            }
+            final String normalized = line.replace("\r\n", "\n").replace('\r', '\n');
+            for (final String part : normalized.split("\n", -1)) {
+                out.add(part);
+            }
+        }
+        return out;
+    }
+
     /**
      * Move a key's data and its full comment subtree (the key's own block/side comment and blank-line
      * spacing AND those of every descendant) from {@code oldPath} to {@code newPath}. The moved comments
