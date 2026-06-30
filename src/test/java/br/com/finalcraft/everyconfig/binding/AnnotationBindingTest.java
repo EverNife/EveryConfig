@@ -13,20 +13,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The annotation introspector wired into every codec mapper: @Key rename + case transform, enum-by-name. */
+/**
+ * The class-wide naming strategy ({@code @JsonNaming(KeyCaseStrategy.*)}): kebab/snake applied to every
+ * property, with a per-field {@code @Key} overriding it. This is mapper-level (codec-independent), so it
+ * stays here as a focused introspector unit test; the per-field {@code @Key} rename + case transform and
+ * enum-by-name round trips are exercised across every codec in the codec-agnostic contract.
+ */
 class AnnotationBindingTest {
-
-    enum Mode {FAST, SLOW}
-
-    static class Server {
-        @Key(transformCase = KeyTransformCase.KEBAB_CASE)
-        public int maxPoolSize = 10;
-
-        @Key("custom-host")
-        public String host = "localhost";
-
-        public Mode mode = Mode.FAST;
-    }
 
     /** Class-wide kebab via @JsonNaming; the two @Key fields prove per-field precedence over the strategy. */
     @JsonNaming(KeyCaseStrategy.Kebab.class)
@@ -47,30 +40,6 @@ class AnnotationBindingTest {
     }
 
     private final JsonCodec codec = new JsonCodec();
-
-    @Test
-    void keyRenameAndCaseTransformApplied() {
-        final JsonNode tree = codec.valueToTree(new Server());
-        assertTrue(tree.has("max-pool-size"), tree.toString());
-        assertTrue(tree.has("custom-host"), tree.toString());
-        assertEquals(10, tree.get("max-pool-size").asInt());
-        assertEquals("localhost", tree.get("custom-host").asText());
-    }
-
-    @Test
-    void enumSerializesByName() {
-        assertEquals("FAST", codec.valueToTree(new Server()).get("mode").asText());
-    }
-
-    @Test
-    void boundBackThroughRenamedKeys() {
-        final JsonNode tree = codec.readTree("{\"max-pool-size\":25,\"custom-host\":\"h\",\"mode\":\"SLOW\"}");
-        final JavaType type = codec.getObjectMapper().constructType(Server.class);
-        final Server s = codec.treeToValue(tree, type);
-        assertEquals(25, s.maxPoolSize);
-        assertEquals("h", s.host);
-        assertEquals(Mode.SLOW, s.mode);
-    }
 
     @Test
     void classWideKebabApplied() {

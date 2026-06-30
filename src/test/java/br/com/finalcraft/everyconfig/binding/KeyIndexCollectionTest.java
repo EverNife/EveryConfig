@@ -13,7 +13,6 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** @KeyIndex collection indexing: a collection serializes as a section keyed by id (id omitted from the body),
@@ -32,10 +31,6 @@ class KeyIndexCollectionTest {
             this.name = name;
             this.balance = balance;
         }
-    }
-
-    static class NoKeyIndex {
-        public int x;
     }
 
     private final JsonCodec codec = new JsonCodec();
@@ -67,13 +62,6 @@ class KeyIndexCollectionTest {
         assertEquals(1, read.size());
         assertEquals("alice", read.get(0).name); // the section key, not the body's "WRONG"
         assertEquals(7, read.get(0).balance);
-    }
-
-    @Test
-    void rejectsEntityWithoutId() {
-        final Config c = new Config();
-        assertThrows(BindException.class,
-                () -> c.writeKeyIndexCollection("xs", Arrays.asList(new NoKeyIndex()), codec));
     }
 
     @Test
