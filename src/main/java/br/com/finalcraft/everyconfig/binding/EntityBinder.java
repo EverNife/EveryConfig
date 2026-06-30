@@ -45,6 +45,10 @@ public final class EntityBinder<T> {
     /** One schema cache per shared codec mapper, so a type is introspected once and reused. */
     private static final ConcurrentHashMap<ObjectMapper, SchemaCache> SCHEMA_CACHES = new ConcurrentHashMap<>();
 
+    /** The {@code @Section} field layout of each type, resolved once — a binder is built per bind/read/write,
+     *  so the section walk must not repeat on every call. The cached list is unmodifiable (it is shared). */
+    private static final ConcurrentHashMap<Class<?>, List<SectionField>> SECTION_FIELDS = new ConcurrentHashMap<>();
+
     private final Config config;
     private final JavaType type;
     private final Codec codec;
@@ -85,9 +89,13 @@ public final class EntityBinder<T> {
     }
 
     private static List<SectionField> collectSectionFields(final Class<?> raw) {
+        return SECTION_FIELDS.computeIfAbsent(raw, EntityBinder::scanSectionFields);
+    }
+
+    private static List<SectionField> scanSectionFields(final Class<?> raw) {
         final List<SectionField> out = new ArrayList<>();
         collectSectionFields(raw, "", new HashSet<Class<?>>(), out);
-        return out;
+        return Collections.unmodifiableList(out);
     }
 
     /** Recursively gather {@code @Section} fields of {@code raw} and of its nested-POJO fields, each tagged
