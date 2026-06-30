@@ -196,6 +196,12 @@ public final class Dtos {
         public String mode = "rw";
     }
 
+    /** Class-level {@code @Comment} in OVERRIDE mode (the default) — seeds/overwrites the file header. */
+    @Comment("Generated header")
+    public static class ClassHeaderOverridePojo {
+        public int value = 1;
+    }
+
     /** {@code @Section} placement: a flat field relocated to a nested path. */
     public static class SectionedPojo {
         @Section("database.pool")
