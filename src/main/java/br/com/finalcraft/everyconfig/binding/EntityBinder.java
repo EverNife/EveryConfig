@@ -482,11 +482,15 @@ public final class EntityBinder<T> {
 
     /**
      * Build the POJO's no-arg default by binding an empty object, so a later recovered value can fall
-     * back to the field's real default. Null when the type cannot be built without data.
+     * back to the field's real default. Binds an empty object NODE rather than the text {@code "{}"}: the
+     * literal would be parsed by the codec's text engine, and not every format accepts it (the TOML parser
+     * rejects {@code "{}"} as a document), whereas converting an in-memory node is format-independent — so a
+     * read keeps constructing the default (and firing {@code @PreLoad}) on every codec. Null when the type
+     * cannot be built without data.
      */
     private T constructDefault() {
         try {
-            return mapper.readValue("{}", type);
+            return mapper.convertValue(mapper.getNodeFactory().objectNode(), type);
         } catch (final Exception e) {
             return null;
         }
