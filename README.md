@@ -49,8 +49,9 @@ state is a Jackson `ObjectNode` tree that every format reads into and writes out
   ⇄ tree; swap `new YamlCodec()` for `new TomlCodec()` and the rest of your code is untouched.
 - **💬 Comments survive.** A format-agnostic comment overlay round-trips block, side, header and footer
   comments — through YAML, TOML and JSONC. JSON declares no comment fidelity and never pretends to.
-- **🧩 Typed binding that *merges*.** Bind the tree to a POJO when you want types; on save the binding **merges
-  into the tree** — unknown keys a user added by hand always survive, and the tree wins on conflict.
+- **🧩 Typed binding — override or merge, your call.** Bind the tree to a POJO when you want types. Writing a
+  POJO is explicit: `setValue` **replaces** the subtree, `mergeValue` **merges** into it — with merge, unknown
+  keys a user added by hand survive and the tree wins on conflict.
 - **🌱 Self-healing defaults.** `getOrSetValueIfAbsent(path, def, comment)` seeds a value *and* its documentation
   only when absent, so it is safe to call on every startup.
 - **🛟 Corruption-proof startup.** A malformed file is backed up to `.bak` and the config starts empty — a
@@ -140,7 +141,7 @@ Need types? Bind the tree to a POJO:
 ```java
 DbConfig db = cfg.getValue("database", DbConfig.class); // read the subtree at a path bound to the type
 db.maxPool = 25;
-cfg.setValue("database", db);                           // a POJO setValue MERGES (unknown keys + comments survive)
+cfg.setValue("database", db);                           // setValue REPLACES the subtree (mergeValue keeps unknown keys)
 cfg.save();
 ```
 
@@ -157,8 +158,9 @@ cfg.save();
 
 ### The 5 design decisions (the DNA)
 
-1. **The tree is canonical.** The dynamic API operates on the `ObjectNode`; typed binding is a derived view;
-   on conflict the **tree wins** (unknown keys survive) and a binding save **merges**, never replaces.
+1. **The tree is canonical.** The dynamic API operates on the `ObjectNode`; typed binding is a derived view.
+   The typed binder and `mergeValue` **merge** into the tree (on conflict the **tree wins**, unknown keys
+   survive); `setValue` **replaces** the subtree it targets.
 2. **Comments are seed/override.** `@Comment` (and `getOrSetValueIfAbsent(...,comment)`) write comments in two
    explicit modes — rewrite-every-save or write-once.
 3. **Comment fidelity is a codec capability** — each codec declares `LOSSLESS` / `LOSSY` / `NONE`.
@@ -243,7 +245,7 @@ distinct blocks. On a `NONE`-fidelity codec (JSON) header/footer are held in mem
 ## Typed entity binding
 
 Binding is a derived view over the tree. A binding **save merges** into the tree (the tree wins, unknown keys
-survive):
+survive) — the same merge as `mergeValue`; `setValue` instead replaces the subtree:
 
 ```java
 @Comment(value = "Database settings", mode = CommentMode.SET_IF_ABSENT)
@@ -265,7 +267,7 @@ DbConfig db = cfg.loadAs(DbConfig.class, codec);    // lenient by default
 - **Path-oriented binder.** `cfg.bind(type[, codec]).read(path)` / `readInto(path, target)` / `write(path, pojo)`
   (the root is the empty path `""`); `read*Result(...)` variants carry the issues. The Config façade wraps it:
   `getValue(path, type)` (typed read), `getValueInto(path, target)`, `getList(path, type)`, and a POJO
-  `setValue(path, pojo)` (the annotation-aware merge).
+  `setValue(path, pojo)` (annotation-aware override) / `mergeValue(path, pojo)` (annotation-aware merge).
 - **Lenient bind (default):** a value that can't be coerced is recorded as a `LoadIssue` and the field keeps
   its real default; `STRICT` throws a `BindException` on the first mismatch. Use `loadAsResult(...)` (or the
   binder's `readResult(...)`) to get a `BindResult<T>` carrying the value **and** the issues together.
