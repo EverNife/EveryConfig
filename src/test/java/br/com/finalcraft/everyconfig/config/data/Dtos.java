@@ -60,6 +60,13 @@ public final class Dtos {
         public long epoch;
     }
 
+    @Data
+    @NoArgsConstructor
+    public static class PlainPojoPartial {
+        public String name;
+        public boolean active;
+    }
+
     /** POJO-in-POJO (non-section nesting). */
     @Data
     @NoArgsConstructor

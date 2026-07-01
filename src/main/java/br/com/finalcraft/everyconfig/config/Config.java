@@ -185,13 +185,39 @@ public class Config implements AutoCloseable {
     // ==================== set / remove ====================
 
     /**
-     * Stores {@code value} at {@code path} ({@code ""}/{@code null} = the root). A native value (scalar,
-     * {@code Map}, list, {@link JsonNode}, or a scalar-serializing type like UUID/java.time) is set as a
-     * raw <em>replace</em>. An arbitrary POJO (one that serializes to an object) is instead <em>merged</em>
-     * annotation-aware through the bound codec — {@code @Comment} seeded, {@code @Section} relocated, and
-     * unknown sibling keys preserved (the tree wins). A {@code null} value removes the path.
+     * Stores {@code value} at {@code path} ({@code ""}/{@code null} = the root), <em>replacing</em> whatever
+     * is there. A native value (scalar, {@code Map}, list, {@link JsonNode}, or a scalar-serializing type
+     * like UUID/java.time) is a raw replace. An arbitrary POJO (one that serializes to an object) is
+     * projected annotation-aware through the bound codec — {@code @Comment} seeded, {@code @Section}
+     * relocated, {@code @Key}/enum-by-name honored — and then <em>overrides</em> the subtree at {@code path}:
+     * keys the POJO does not declare (and their comments) do NOT survive. Sibling keys outside {@code path}
+     * are untouched. To instead MERGE a POJO into the existing subtree (unknown keys survive, the tree wins),
+     * use {@link #mergeValue(String, Object)}. A {@code null} value removes the path.
      */
     public void setValue(final String path, final Object value) {
+        writeValue(path, value, false);
+    }
+
+    /**
+     * Stores {@code value} at {@code path} ({@code ""}/{@code null} = the root), MERGING a POJO into the
+     * existing subtree: the POJO is the source of truth only for the keys it declares, and unknown sibling
+     * keys under {@code path} — plus the comment overlay and key order — survive (the tree wins).
+     * {@code @Comment} is seeded (never written over a user edit), {@code @Section} relocated, and
+     * {@code @Key}/enum-by-name honored. This is the explicit merge counterpart of
+     * {@link #setValue(String, Object)} (which replaces the subtree). A native value (scalar, {@code Map},
+     * list, {@link JsonNode}) has nothing to merge, so it behaves exactly like {@code setValue} (a raw
+     * replace). A {@code null} value removes the path.
+     */
+    public void mergeValue(final String path, final Object value) {
+        writeValue(path, value, true);
+    }
+
+    /**
+     * The shared write body for {@link #setValue}/{@link #mergeValue}: identical for every value except a
+     * genuine POJO, where {@code merge} chooses between a merge into the existing subtree and an override
+     * that replaces it.
+     */
+    private void writeValue(final String path, final Object value, final boolean merge) {
         final boolean root = DPath.isRoot(path);
         if (value == null) {
             if (root) {
@@ -204,9 +230,10 @@ public class Config implements AutoCloseable {
         // A collection whose element type carries @KeyIndex serializes key-major (a section keyed by the id),
         // not as a plain array. It needs the codec mapper for the element bodies; @KeyIndex values must be
         // unique (KeyIndexer throws otherwise). An empty collection has no element to classify, so it falls
-        // through and stores a plain empty array.
+        // through and stores a plain empty array. The indexed node is a preformed node (not an entity), so it
+        // takes the raw-replace path below regardless of merge/override.
         if (codec != null && value instanceof Collection && isKeyIndexedCollection((Collection<?>) value)) {
-            setValue(path, KeyIndexer.toIndexed((Collection<?>) value, codec.getObjectMapper()));
+            writeValue(path, KeyIndexer.toIndexed((Collection<?>) value, codec.getObjectMapper()), merge);
             return;
         }
         final JsonNode node = coercion.toNode(value);
@@ -218,10 +245,14 @@ public class Config implements AutoCloseable {
             }
             return;
         }
-        // A genuine POJO (serializes to an object, and is not a Map/JsonNode) is merged annotation-aware;
+        // A genuine POJO (serializes to an object, and is not a Map/JsonNode) routes through the binder;
         // everything native takes the raw replace path below.
         if (codec != null && node instanceof ObjectNode && isEntityValue(value)) {
-            mergeEntity(root ? "" : path, value);
+            if (merge) {
+                mergeEntity(root ? "" : path, value);
+            } else {
+                overrideEntity(root ? "" : path, value);
+            }
             return;
         }
         if (root) {
@@ -365,6 +396,14 @@ public class Config implements AutoCloseable {
 
     public void setValue(final String path, final Object value, final String comment) {
         setValue(path, value);
+        if (value != null && comment != null) {
+            setComment(path, comment);
+        }
+    }
+
+    /** As {@link #mergeValue(String, Object)}, also setting (overwriting) the block comment at {@code path}. */
+    public void mergeValue(final String path, final Object value, final String comment) {
+        mergeValue(path, value);
         if (value != null && comment != null) {
             setComment(path, comment);
         }
@@ -893,20 +932,36 @@ public class Config implements AutoCloseable {
     }
 
     /**
-     * Field-level get-or-seed for a whole entity: ensures every field of {@code def} exists in the tree at
-     * {@code path} (seeding the ones the file lacks — so a field added to the POJO appears in an old file),
-     * loads the file's values onto {@code def}, and returns {@code def}. The file wins for fields it has.
+     * Field-level get-or-seed for a whole entity, MERGING: ensures every field of {@code def} exists in the
+     * tree at {@code path} (seeding the ones the file lacks — so a field added to the POJO appears in an old
+     * file), loads the file's values onto {@code def}, and returns {@code def}. The file wins for fields it
+     * already has. This is the merge counterpart of {@link #getOrSetValueIfAbsent(String, Object)}, which
+     * seeds all-or-nothing (only when the whole path is absent, and never fills in a field a partial subtree
+     * lacks).
      */
-    public <D> D getOrSetValueIfAbsentInto(final String path, final D def) {
+    public <D> D getOrMergeValue(final String path, final D def) {
         seedEntityFieldwise(path, def);
         return def;
     }
 
-    /** As {@link #getOrSetValueIfAbsentInto(String, Object)}, but the completed values land on {@code target}
+    /** As {@link #getOrMergeValue(String, Object)}, but the completed values land on {@code target}
      *  (a separate instance) while {@code def} supplies the defaults to seed. */
-    public <D> D getOrSetValueIfAbsentInto(final String path, final D def, final D target) {
+    public <D> D getOrMergeValue(final String path, final D def, final D target) {
         seedEntityFieldwise(path, def);
         return getValueInto(path, target);
+    }
+
+    /** @deprecated renamed to {@link #getOrMergeValue(String, Object)} for symmetry with
+     *  {@link #mergeValue}; this alias delegates and may be removed in a future major. */
+    @Deprecated
+    public <D> D getOrSetValueIfAbsentInto(final String path, final D def) {
+        return getOrMergeValue(path, def);
+    }
+
+    /** @deprecated renamed to {@link #getOrMergeValue(String, Object, Object)}; this alias delegates. */
+    @Deprecated
+    public <D> D getOrSetValueIfAbsentInto(final String path, final D def, final D target) {
+        return getOrMergeValue(path, def, target);
     }
 
     /** Read the file onto {@code def} (file wins where present), then write {@code def} back so the fields
@@ -1022,12 +1077,30 @@ public class Config implements AutoCloseable {
     }
 
     /** Merge a POJO into the tree at {@code path} via the binder (annotation-aware), using the lifecycle
-     *  codec — the engine behind a POJO {@link #setValue(String, Object)}. */
+     *  codec — the engine behind a POJO {@link #mergeValue(String, Object)}. */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private void mergeEntity(final String path, final Object pojo) {
         final EntityBinder binder = bind(pojo.getClass(), codec);
         binder.write(path, pojo);
         dirty = true; // the binder mutated the tree/comments directly, so flag a pending save
+    }
+
+    /**
+     * Replace the subtree at {@code path} with {@code pojo}'s annotation-aware projection — the override
+     * counterpart of {@link #mergeEntity} and the engine behind a POJO {@link #setValue(String, Object)}.
+     * The existing node is cleared first (its keys AND their comments), so keys the POJO does not declare do
+     * not survive; the projection is then merged into the now-empty node (seeding {@code @Comment},
+     * relocating {@code @Section}). Sibling keys outside {@code path} are untouched. Clearing the root's
+     * comment subtree also drops the file header/footer — the same as a native root replace — so a class-level
+     * {@code @Comment} re-seeds the header on the merge that follows.
+     */
+    private void overrideEntity(final String path, final Object pojo) {
+        final JsonNode existing = getNode(path);
+        if (existing instanceof ObjectNode) {
+            ((ObjectNode) existing).removeAll();               // clear in place -> the key keeps its parent position
+            comments.removeSubtree(path == null ? "" : path);  // the replaced subtree's comments no longer apply
+        }
+        mergeEntity(path, pojo);
     }
 
     // ==================== save-defaults bookkeeping ====================
@@ -1051,8 +1124,8 @@ public class Config implements AutoCloseable {
     // ==================== in-memory + codec selection ====================
 
     /**
-     * An in-memory Config bound to {@link InMemoryCodec}: the full typed/POJO API works (setValue-merge,
-     * {@code getValue(path, type)}, {@code @Key}/{@code @Section}/{@code @Comment}, enum-by-name,
+     * An in-memory Config bound to {@link InMemoryCodec}: the full typed/POJO API works ({@code setValue}/
+     * {@code mergeValue}, {@code getValue(path, type)}, {@code @Key}/{@code @Section}/{@code @Comment}, enum-by-name,
      * {@code java.time}, {@code Optional}) but there is no file or text format, so it cannot be persisted —
      * {@link #save()} throws. To persist, open a real file with {@link #open} instead. This differs from
      * {@code new Config()}, which has no codec at all and accepts only native (scalar/{@code Map}/list/
