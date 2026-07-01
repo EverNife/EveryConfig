@@ -97,6 +97,15 @@ public class ConfigSection {
         config.setValue(concatSubPath(sub), value, comment);
     }
 
+    /** Merge counterpart of {@link #setValue(String, Object)} (a POJO merges; unknown keys survive). */
+    public void mergeValue(final String sub, final Object value) {
+        config.mergeValue(concatSubPath(sub), value);
+    }
+
+    public void mergeValue(final String sub, final Object value, final String comment) {
+        config.mergeValue(concatSubPath(sub), value, comment);
+    }
+
     public boolean removeValue(final String sub) {
         return config.removeValue(concatSubPath(sub));
     }
@@ -178,6 +187,11 @@ public class ConfigSection {
 
     public <D> List<D> getOrSetValueIfAbsent(final String sub, final List<D> def, final String comment) {
         return config.getOrSetValueIfAbsent(concatSubPath(sub), def, comment);
+    }
+
+    /** Field-level get-or-seed with merge — the merge counterpart of {@link #getOrSetValueIfAbsent}. */
+    public <D> D getOrMergeValue(final String sub, final D def) {
+        return config.getOrMergeValue(concatSubPath(sub), def);
     }
 
     public void setValueIfAbsent(final String sub, final Object value) {
