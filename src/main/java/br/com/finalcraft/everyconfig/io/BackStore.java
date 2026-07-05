@@ -5,6 +5,7 @@ import br.com.finalcraft.everyconfig.io.watcher.Fingerprint;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
+import java.nio.file.Path;
 import java.time.Duration;
 
 /**
@@ -20,6 +21,12 @@ public interface BackStore {
 
     /** Stable identity for logs/snapshots, e.g. the absolute file path or {@code "(in-memory)"}. */
     String describe();
+
+    /**
+     * The file this back-store persists to, or {@code null} when it is not file-backed. Lets a caller obtain
+     * the path (e.g. {@code Config.getPath()}) without knowing the concrete back-store type.
+     */
+    Path path();
 
     /** Charset used to decode/encode text. */
     Charset charset();

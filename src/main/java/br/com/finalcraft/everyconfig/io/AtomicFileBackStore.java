@@ -45,6 +45,7 @@ public final class AtomicFileBackStore implements BackStore {
         this.durability = durability != null ? durability : Durability.OS_CACHE;
     }
 
+    @Override
     public Path path() {
         return filePath;
     }
