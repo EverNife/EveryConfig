@@ -1,5 +1,8 @@
 package br.com.finalcraft.everyconfig.io;
 
+import br.com.finalcraft.everyconfig.io.watcher.Watcher;
+import br.com.finalcraft.everyconfig.io.watcher.Fingerprint;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;

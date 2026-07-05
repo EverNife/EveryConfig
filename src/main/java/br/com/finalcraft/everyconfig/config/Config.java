@@ -21,6 +21,8 @@ import br.com.finalcraft.everyconfig.core.coerce.TypeFamily;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
 import br.com.finalcraft.everyconfig.core.tree.DPath;
+import br.com.finalcraft.everyconfig.io.watcher.Watcher;
+import br.com.finalcraft.everyconfig.io.watcher.Fingerprint;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -69,10 +71,10 @@ public class Config implements AutoCloseable {
     private final ReentrantLock lock = new ReentrantLock(true);
     private BackStore backStore;
     private Codec codec;
-    private volatile BackStore.Fingerprint loaded = BackStore.Fingerprint.ABSENT;
+    private volatile Fingerprint loaded = Fingerprint.ABSENT;
     private volatile LoadStatus lastLoadStatus = LoadStatus.NEVER_LOADED;
     private boolean dirty = false;
-    private BackStore.Watcher watcher;
+    private Watcher watcher;
     private volatile Runnable onReload;
 
     // "The file's shape evolved": flipped true whenever a default (a value or comment the file lacked) is
@@ -1338,7 +1340,7 @@ public class Config implements AutoCloseable {
     private void doSave(final Codec codec, final Charset charset) {
         lock.lock();
         try {
-            final BackStore.Fingerprint written = backStore.writeAtomic(encodeWith(codec, charset));
+            final Fingerprint written = backStore.writeAtomic(encodeWith(codec, charset));
             loaded = written;
             if (watcher != null) {
                 watcher.refreshSnapshot(written);
@@ -1448,7 +1450,7 @@ public class Config implements AutoCloseable {
     /** Stops the watcher, if any. Idempotent. */
     @Override
     public void close() {
-        final BackStore.Watcher w = this.watcher;
+        final Watcher w = this.watcher;
         if (w != null) {
             w.close();
             this.watcher = null;
