@@ -1,5 +1,7 @@
 package br.com.finalcraft.everyconfig.io;
 
+import br.com.finalcraft.everyconfig.io.watcher.Watcher;
+import br.com.finalcraft.everyconfig.io.watcher.Fingerprint;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,7 +37,7 @@ class AtomicFileBackStoreTest {
         assertFalse(backStore.exists());
         assertNull(backStore.readBytes());
 
-        final BackStore.Fingerprint fp = backStore.writeAtomic(bytes("hello: world\n"));
+        final Fingerprint fp = backStore.writeAtomic(bytes("hello: world\n"));
         assertTrue(backStore.exists());
         assertArrayEquals(bytes("hello: world\n"), backStore.readBytes());
         assertEquals(bytes("hello: world\n").length, fp.size);
@@ -67,7 +69,7 @@ class AtomicFileBackStoreTest {
         // correct no-op for the visible round-trip (the bytes land and read back exactly).
         final AtomicFileBackStore backStore =
                 new AtomicFileBackStore(dir.resolve("fsync.yml"), BackStore.Durability.FSYNC);
-        final BackStore.Fingerprint fp = backStore.writeAtomic(bytes("durable: true\n"));
+        final Fingerprint fp = backStore.writeAtomic(bytes("durable: true\n"));
         assertTrue(backStore.exists());
         assertArrayEquals(bytes("durable: true\n"), backStore.readBytes());
         assertEquals(bytes("durable: true\n").length, fp.size);
@@ -89,9 +91,9 @@ class AtomicFileBackStoreTest {
     void fingerprintReflectsContentChange() throws IOException {
         final AtomicFileBackStore backStore = new AtomicFileBackStore(dir.resolve("d.yml"));
         backStore.writeAtomic(bytes("a: 1\n"));
-        final BackStore.Fingerprint first = backStore.fingerprint();
+        final Fingerprint first = backStore.fingerprint();
         backStore.writeAtomic(bytes("a: 1\nb: 2\n"));
-        final BackStore.Fingerprint second = backStore.fingerprint();
+        final Fingerprint second = backStore.fingerprint();
         assertFalse(first.equals(second));
     }
 
@@ -99,8 +101,8 @@ class AtomicFileBackStoreTest {
     void statOnlyFingerprintMatchesHashedOneOnMtimeAndSize() {
         // The cheap (mtime,size) fingerprint behind hasBeenModified must stay equal to a hashed fingerprint
         // with the same mtime/size, so adding a content hash does not change hasBeenModified semantics.
-        final BackStore.Fingerprint stat = new BackStore.Fingerprint(5L, 10L);
-        final BackStore.Fingerprint hashed = new BackStore.Fingerprint(5L, 10L, 999L);
+        final Fingerprint stat = new Fingerprint(5L, 10L);
+        final Fingerprint hashed = new Fingerprint(5L, 10L, 999L);
         assertEquals(stat, hashed);
         assertEquals(hashed, stat);
         assertEquals(stat.hashCode(), hashed.hashCode());
@@ -108,16 +110,16 @@ class AtomicFileBackStoreTest {
 
     @Test
     void contentHashDistinguishesSameMtimeAndSize() {
-        final BackStore.Fingerprint a = new BackStore.Fingerprint(5L, 10L, 111L);
-        final BackStore.Fingerprint b = new BackStore.Fingerprint(5L, 10L, 222L);
+        final Fingerprint a = new Fingerprint(5L, 10L, 111L);
+        final Fingerprint b = new Fingerprint(5L, 10L, 222L);
         assertNotEquals(a, b); // identical (mtime,size) but different content -> distinct when both hashed
     }
 
     @Test
     void writeAtomicFingerprintCarriesContentHash() throws IOException {
         final AtomicFileBackStore backStore = new AtomicFileBackStore(dir.resolve("hashed.yml"));
-        final BackStore.Fingerprint fp = backStore.writeAtomic(bytes("x: 1\n"));
-        assertNotEquals(BackStore.Fingerprint.NO_HASH, fp.hash);
+        final Fingerprint fp = backStore.writeAtomic(bytes("x: 1\n"));
+        assertNotEquals(Fingerprint.NO_HASH, fp.hash);
     }
 
     @Test
@@ -128,7 +130,7 @@ class AtomicFileBackStoreTest {
         final FileTime original = Files.getLastModifiedTime(file);
 
         final CountDownLatch fired = new CountDownLatch(1);
-        final BackStore.Watcher watcher =
+        final Watcher watcher =
                 backStore.watch(Duration.ofMillis(20), fired::countDown, true);
         watcher.start();
         try {

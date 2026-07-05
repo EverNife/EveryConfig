@@ -1,5 +1,8 @@
 package br.com.finalcraft.everyconfig.io;
 
+import br.com.finalcraft.everyconfig.io.watcher.Watcher;
+import br.com.finalcraft.everyconfig.io.watcher.Fingerprint;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,11 +15,11 @@ import java.util.logging.Logger;
  * than a filesystem notification service — gives predictable, tunable latency on every platform.
  *
  * <p>It does not react to a {@code Config}'s own save: after a save, the owner calls
- * {@link #refreshSnapshot(BackStore.Fingerprint)} with the exact bytes it wrote, and the watcher adopts
+ * {@link #refreshSnapshot(Fingerprint)} with the exact bytes it wrote, and the watcher adopts
  * that baseline only if disk still matches it — so a foreign write that raced the save is still caught on
  * the next poll instead of being silently swallowed.
  */
-final class FilePollWatcher implements BackStore.Watcher {
+final class FilePollWatcher implements Watcher {
 
     private static final Logger LOG = Logger.getLogger(FilePollWatcher.class.getName());
 
@@ -27,7 +30,7 @@ final class FilePollWatcher implements BackStore.Watcher {
     private final Thread thread;
 
     private volatile boolean running = true;
-    private volatile BackStore.Fingerprint baseline;
+    private volatile Fingerprint baseline;
 
     FilePollWatcher(final Path filePath, final Duration pollInterval, final Runnable onChange,
                     final boolean contentHashed) {
@@ -52,8 +55,8 @@ final class FilePollWatcher implements BackStore.Watcher {
     }
 
     @Override
-    public void refreshSnapshot(final BackStore.Fingerprint justWrote) {
-        final BackStore.Fingerprint now = probe();
+    public void refreshSnapshot(final Fingerprint justWrote) {
+        final Fingerprint now = probe();
         if (now.equals(justWrote)) {
             this.baseline = justWrote; // disk is exactly our write -> ignore it next poll
         }
@@ -72,7 +75,7 @@ final class FilePollWatcher implements BackStore.Watcher {
                 return;
             }
             try {
-                final BackStore.Fingerprint now = probe();
+                final Fingerprint now = probe();
                 if (!now.equals(baseline) && now.size >= 0) {
                     this.baseline = now; // adopt before the callback so a save inside it is ignored
                     onChange.run();
@@ -84,20 +87,20 @@ final class FilePollWatcher implements BackStore.Watcher {
         }
     }
 
-    private BackStore.Fingerprint probe() {
+    private Fingerprint probe() {
         try {
             if (Files.exists(filePath)) {
                 final long mtime = Files.getLastModifiedTime(filePath).toMillis();
                 final long size = Files.size(filePath);
                 if (!contentHashed) {
-                    return new BackStore.Fingerprint(mtime, size);
+                    return new Fingerprint(mtime, size);
                 }
                 // Hash the content so a same-size edit within one coarse mtime tick is still seen as a change.
-                return new BackStore.Fingerprint(mtime, size, AtomicFileBackStore.crc32(Files.readAllBytes(filePath)));
+                return new Fingerprint(mtime, size, AtomicFileBackStore.crc32(Files.readAllBytes(filePath)));
             }
         } catch (final IOException ignored) {
             // best-effort; treat as absent
         }
-        return BackStore.Fingerprint.ABSENT;
+        return Fingerprint.ABSENT;
     }
 }
