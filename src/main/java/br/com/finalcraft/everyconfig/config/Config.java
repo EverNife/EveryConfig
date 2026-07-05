@@ -29,6 +29,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
@@ -81,7 +82,7 @@ public class Config implements AutoCloseable {
     // seeded. Distinct from `dirty`, which means "there is unsaved work" for ANY mutation — this tracks
     // only default-seeding, so a caller can tell "I completed an old file with new keys" apart from "a
     // value was edited". (Not serialized state — a Config is never serialized.)
-    private boolean newDefaultValueToSave = false;
+    private boolean newSeededDefaults = false;
 
     public Config() {
         this(JsonNodeFactory.instance.objectNode(), new CommentTree(), KeyOrder.empty());
@@ -128,6 +129,26 @@ public class Config implements AutoCloseable {
      */
     public Codec getCodec() {
         return codec;
+    }
+
+    /**
+     * The file this Config persists to, or {@code null} when it has no durable file - i.e. an in-memory
+     * Config (from {@link #inMemory()} or a bare {@code new Config()}) that is backed only by memory. A
+     * caller that only needs the path can use {@link #getPath()} and skip the {@link File} allocation.
+     */
+    @Nullable
+    public File getFile() {
+        final Path p = getPath();
+        return p == null ? null : p.toFile();
+    }
+
+    /**
+     * The path this Config persists to, or {@code null} when it has no durable file (an in-memory Config).
+     * This is the file the lifecycle ({@link #save()}/{@link #reload()}) reads and writes.
+     */
+    @Nullable
+    public Path getPath() {
+        return backStore == null ? null : backStore.path();
     }
 
     /** The path separator for the dynamic API: always {@link DPath#SEP}. */
@@ -767,7 +788,7 @@ public class Config implements AutoCloseable {
             if (!flat.isEmpty()) {
                 comments.setHeader(flat);
                 dirty = true;
-                newDefaultValueToSave = true;
+                newSeededDefaults = true;
             }
         }
         return this;
@@ -799,7 +820,7 @@ public class Config implements AutoCloseable {
             if (!flat.isEmpty()) {
                 comments.setFooter(flat);
                 dirty = true;
-                newDefaultValueToSave = true;
+                newSeededDefaults = true;
             }
         }
         return this;
@@ -881,7 +902,7 @@ public class Config implements AutoCloseable {
     public <D> D getOrSetValueIfAbsent(final String path, final D def) {
         if (!contains(path)) {
             setValue(path, def);
-            newDefaultValueToSave = true;
+            newSeededDefaults = true;
             return def;
         }
         if (def != null && !isScalarDefault(def) && codec != null) {
@@ -913,7 +934,7 @@ public class Config implements AutoCloseable {
     public <D> List<D> getOrSetValueIfAbsent(final String path, final List<D> def) {
         if (!contains(path)) {
             setValue(path, def);
-            newDefaultValueToSave = true;
+            newSeededDefaults = true;
             return def;
         }
         if (def != null && !def.isEmpty() && codec != null) {
@@ -973,7 +994,7 @@ public class Config implements AutoCloseable {
         final EntityBinder binder = bind(def.getClass(), requireCodec());
         binder.readInto(path, def);
         binder.write(path, def);
-        newDefaultValueToSave = true;
+        newSeededDefaults = true;
     }
 
     /** True for a default whose existing value is read back by scalar coercion rather than entity binding. */
@@ -989,7 +1010,7 @@ public class Config implements AutoCloseable {
         // A default comment: written only when the path has none yet, so a user-edited comment wins.
         if (comment != null && comments.getComment(path, type) == null) {
             comments.setComment(path, comment, type);
-            newDefaultValueToSave = true;
+            newSeededDefaults = true;
             dirty = true;
         }
     }
@@ -1109,18 +1130,18 @@ public class Config implements AutoCloseable {
 
     /**
      * Whether any default (a value or comment the file lacked) was seeded since the last
-     * {@link #clearNewDefaultValueToSave()}. This is a finer signal than the lifecycle's dirty flag:
+     * {@link #clearNewSeededDefaults()}. This is a finer signal than the lifecycle's dirty flag:
      * {@link #saveIfDirty()} persists on ANY unsaved mutation, while this means specifically "the file's
      * shape evolved — keys/comments that did not exist were added". Use it to tell completing an old file
      * with new defaults apart from an ordinary value edit; use {@link #saveIfDirty()} when you only care
      * that something changed.
      */
-    public boolean isNewDefaultValueToSave() {
-        return newDefaultValueToSave;
+    public boolean hasNewSeededDefaults() {
+        return newSeededDefaults;
     }
 
-    public void clearNewDefaultValueToSave() {
-        newDefaultValueToSave = false;
+    public void clearNewSeededDefaults() {
+        newSeededDefaults = false;
     }
 
     // ==================== in-memory + codec selection ====================
