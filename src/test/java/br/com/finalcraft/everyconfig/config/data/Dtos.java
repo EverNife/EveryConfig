@@ -14,6 +14,7 @@ import br.com.finalcraft.everyconfig.binding.ConfigContext;
 import br.com.finalcraft.everyconfig.binding.ConfigLifecycle;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.binding.LoadIssueAware;
+import br.com.finalcraft.everyconfig.selfdescribe.EveryConfigElementString;
 import br.com.finalcraft.everyconfig.selfdescribe.EveryConfigMap;
 import br.com.finalcraft.everyconfig.selfdescribe.EveryConfigString;
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -711,6 +712,59 @@ public final class Dtos {
         @Override
         public int hashCode() {
             return Objects.hash(scalar, endpoint, points);
+        }
+    }
+
+    // ===================== distinct element form (rich solo, compact in a list) =====================
+
+    /**
+     * A position with two forms: a RICH object {@code {x,y,z}} when solo/a field (its plain Jackson form),
+     * and a COMPACT string {@code "x y z"} when written as a collection element via
+     * {@link EveryConfigElementString}. Implementing that interface does NOT change the solo form — only the
+     * opt-in {@code setElementList} uses the compact one.
+     */
+    public static class DualFormPos implements EveryConfigElementString<DualFormPos> {
+        public int x;
+        public int y;
+        public int z;
+
+        public DualFormPos() {
+        }
+
+        public DualFormPos(final int x, final int y, final int z) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        @Override
+        public String toElementString() {
+            return x + " " + y + " " + z;
+        }
+
+        public static DualFormPos fromElementString(final String s) {
+            final String[] parts = s.trim().split("\\s+");
+            return new DualFormPos(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]),
+                    Integer.parseInt(parts[2]));
+        }
+
+        @Override
+        public boolean equals(final Object o) {
+            if (!(o instanceof DualFormPos)) {
+                return false;
+            }
+            final DualFormPos that = (DualFormPos) o;
+            return x == that.x && y == that.y && z == that.z;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(x, y, z);
+        }
+
+        @Override
+        public String toString() {
+            return "DualFormPos(" + toElementString() + ")";
         }
     }
 
