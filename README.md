@@ -28,6 +28,7 @@ data, never clobbers it.
 - [The dynamic API](#the-dynamic-api)
 - [Default values & comments](#default-values--comments)
 - [Typed entity binding](#typed-entity-binding)
+- [Self-describing types](#self-describing-types)
 - [`@KeyIndex` collections](#keyindex-collections)
 - [Lifecycle, reload & watching](#lifecycle-reload--watching)
 - [Building & running the tests](#building--running-the-tests)
@@ -285,6 +286,45 @@ DbConfig db = cfg.loadAs(DbConfig.class, codec);    // lenient by default
 
 ---
 
+## Self-describing types
+
+A custom type can carry its own config codec, so it round-trips with **no central registration** — the shared
+mapper honors it in every context (a solo value, a POJO field, a list element).
+
+**Jackson-native (recommended).** Because EveryConfig is Jackson-first, a type that declares `@JsonValue` +
+`@JsonCreator` already self-describes:
+
+```java
+class Coord {
+    final int x, y;
+    @JsonValue String encode()             { return x + ":" + y; }   // -> the string "3:4"
+    @JsonCreator static Coord of(String s) { /* parse "x:y" */ }
+}
+
+cfg.setValue("spawn", new Coord(3, 4));        // stored as "3:4"
+Coord back = cfg.getValue("spawn", Coord.class);
+```
+
+An **enum** that declares a `@JsonValue` keeps its custom form too (a plain enum still serializes by `name()`).
+
+**Marker interfaces (no annotations).** Prefer an explicit contract? Implement `EveryConfigString<T>` (a compact
+string) or `EveryConfigMap<T>` (a structured object); the read half is a static factory found by convention:
+
+```java
+class Coord implements EveryConfigString<Coord> {
+    @Override public String toConfigString()       { return x + ":" + y; }
+    public static Coord fromConfigString(String s) { /* parse */ }   // convention: fromConfigString / fromConfigMap
+}
+```
+
+Both forms need a codec-backed `Config` (`Config.open` / `Config.inMemory`); a bare `new Config()` takes only
+native values. Note that `getValue(path)` **without** a type token still returns the raw string/map — a
+self-describing codec reaches the typed reads and binding, not the untyped dynamic read.
+
+**→ Deep dive: [Self-Describing Types](https://github.com/EverNife/EveryConfig/wiki/Self-Describing-Types)**
+
+---
+
 ## `@KeyIndex` collections
 
 A `Collection<T>` whose element carries a `@KeyIndex` field serializes as a section keyed by that field's
@@ -308,6 +348,27 @@ type with two `@KeyIndex` fields) throws a `BindException` on write; `getListRes
 list together with any read issues (e.g. a stray body id that disagreed with its section key).
 
 **→ Deep dive: [`@KeyIndex` Collections](https://github.com/EverNife/EveryConfig/wiki/KeyIndex-Collections)**
+
+### A compact element form
+
+A type can be **rich as a solo value/field but compact inside a list** — no wall of `{x,y,z}` objects for a
+long `List<Pos>`. Implement `EveryConfigElementString<T>` (which, unlike `EveryConfigString`, leaves the solo
+form untouched) and opt in per call — a plain `setValue` still writes the rich form:
+
+```java
+class Pos implements EveryConfigElementString<Pos> {         // rich solo, compact in a list
+    int x, y, z;
+    @Override public String toElementString()       { return x + " " + y + " " + z; }
+    public static Pos fromElementString(String s)   { /* parse "x y z" */ }
+}
+
+cfg.setValue("home", new Pos(1, 2, 3));                      // solo   -> { x, y, z }        (rich)
+cfg.setElementList("spots", spots);                          // list   -> ["4 5 6", "7 8 9"] (compact)
+List<Pos> back = cfg.getElementList("spots", Pos.class);     // tolerant: reads strings OR objects
+```
+
+Nested `List<T>` fields inside a bound POJO stay rich for now — the compact form is on the dynamic
+`setElementList` / `getElementList` API, mirroring where `@KeyIndex` intercepts.
 
 ---
 
