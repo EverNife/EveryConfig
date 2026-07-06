@@ -565,6 +565,41 @@ public final class Dtos {
         }
     }
 
+    /**
+     * An enum declaring a custom {@code @JsonValue} form (a lowercase code) with a {@code @JsonCreator} to
+     * read it back. Its self-describing form must win over the plain {@code name()} that EveryConfig forces
+     * on undecorated enums — the enum counterpart of {@link SelfDescribingScalar}.
+     */
+    public enum CodeEnum {
+        ALPHA("a"), BETA("b");
+
+        private final String code;
+
+        CodeEnum(final String code) {
+            this.code = code;
+        }
+
+        @JsonValue
+        public String code() {
+            return code;
+        }
+
+        @JsonCreator
+        public static CodeEnum fromCode(final String code) {
+            for (final CodeEnum v : values()) {
+                if (v.code.equals(code)) {
+                    return v;
+                }
+            }
+            throw new IllegalArgumentException("unknown CodeEnum code: " + code);
+        }
+    }
+
+    /** Holds a {@code @JsonValue} enum as a field, to exercise the mapper (POJO-field) serialization path. */
+    public static class JsonValueEnumHolder {
+        public CodeEnum mode;
+    }
+
     // ===================== helpers =====================
 
     /** A {@code LinkedHashMap} preserving insertion order (Java-8 safe; no Map.of). */
