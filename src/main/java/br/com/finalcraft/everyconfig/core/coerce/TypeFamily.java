@@ -1,7 +1,5 @@
 package br.com.finalcraft.everyconfig.core.coerce;
 
-import br.com.finalcraft.everyconfig.selfdescribe.EveryConfigMap;
-import br.com.finalcraft.everyconfig.selfdescribe.EveryConfigString;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.Collection;
@@ -32,12 +30,6 @@ public final class TypeFamily {
      *  raw (there is no schema to merge it against), unlike a genuine POJO entity. */
     public static boolean isPreformedNodeOrMap(final Object value) {
         return value instanceof JsonNode || value instanceof Map;
-    }
-
-    /** A self-describing value ({@link EveryConfigString}/{@link EveryConfigMap}): its own codec owns the
-     *  on-disk shape, so it is stored raw like a preformed node rather than schema-merged as an entity. */
-    public static boolean isSelfDescribing(final Object value) {
-        return value instanceof EveryConfigString || value instanceof EveryConfigMap;
     }
 
     /** A user POJO type worth walking for nested binding annotations — not a primitive, array, enum,

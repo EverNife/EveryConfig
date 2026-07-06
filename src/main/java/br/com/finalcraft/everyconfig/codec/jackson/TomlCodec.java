@@ -5,6 +5,8 @@ import br.com.finalcraft.everyconfig.codec.CodecException;
 import br.com.finalcraft.everyconfig.codec.CommentAware;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.ECMapperProfiles;
+import br.com.finalcraft.everyconfig.selfdescribe.AnnotationCompactElementResolver;
+import br.com.finalcraft.everyconfig.selfdescribe.CompactElementResolver;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
@@ -39,13 +41,22 @@ public final class TomlCodec implements Codec, CommentAware {
     private static final ObjectMapper DEFAULT = ECMapperProfiles.storageSafe(new TomlMapper());
 
     private final ObjectMapper mapper;
+    private final CompactElementResolver compactResolver;
 
     public TomlCodec() {
         this.mapper = DEFAULT;
+        this.compactResolver = AnnotationCompactElementResolver.INSTANCE;
     }
 
     public TomlCodec(final ObjectMapper userMapper) {
+        this(userMapper, null);
+    }
+
+    /** As {@link #TomlCodec(ObjectMapper)}, plus a consumer {@link CompactElementResolver} consulted AHEAD of
+     *  the annotation resolver when classifying a collection's element for its compact form. */
+    public TomlCodec(final ObjectMapper userMapper, final CompactElementResolver compactResolver) {
         this.mapper = ECMapperProfiles.isolate(userMapper, () -> DEFAULT);
+        this.compactResolver = CompactElementResolver.compose(compactResolver, AnnotationCompactElementResolver.INSTANCE);
     }
 
     // ---- identity -------------------------------------------------------
@@ -63,6 +74,11 @@ public final class TomlCodec implements Codec, CommentAware {
     @Override
     public CommentFidelity commentFidelity() {
         return CommentFidelity.LOSSLESS;
+    }
+
+    @Override
+    public CompactElementResolver compactElementResolver() {
+        return compactResolver;
     }
 
     @Override
