@@ -30,12 +30,16 @@ public final class NodeCoercion {
                 "no ObjectMapper bound; cannot serialize " + o.getClass().getName());
     };
 
+    /** Whether a real mapper backs {@link #pojoToNode}; false for a bare {@code new Config()} (no codec). */
+    private boolean pojoBound = false;
+
     public NodeCoercion(final JsonNodeFactory nf) {
         this.nf = nf;
     }
 
     public void setPojoToNode(final Function<Object, JsonNode> pojoToNode) {
         this.pojoToNode = pojoToNode;
+        this.pojoBound = true;
     }
 
     // ==================== INBOUND: Object -> JsonNode ====================
@@ -77,6 +81,12 @@ public final class NodeCoercion {
             return nf.booleanNode((Boolean) value);
         }
         if (value instanceof Enum) {
+            // Serialize through the mapper so a self-describing @JsonValue enum keeps its custom form; the
+            // mapper's enum handling forces name() for a plain enum, so the output is unchanged there. A
+            // codec-less Config has no mapper, so it falls back to the stable name() directly.
+            if (pojoBound) {
+                return pojoToNode.apply(value);
+            }
             return nf.textNode(((Enum<?>) value).name());
         }
         if (value instanceof Map) {
