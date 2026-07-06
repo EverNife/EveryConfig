@@ -1,5 +1,6 @@
 package br.com.finalcraft.everyconfig.codec;
 
+import br.com.finalcraft.everyconfig.selfdescribe.CompactElementResolver;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -113,4 +114,17 @@ public interface Codec {
      * @return the codec's mapper; never null.
      */
     ObjectMapper getObjectMapper();
+
+    // ---- compact element form (pluggable, no global registry) -----------
+
+    /**
+     * Resolves the COMPACT element form of a type — the codec used when a value is an element of a list on the
+     * dynamic path ({@code setValue}/{@code getList}), leaving its rich solo/field form untouched. The default
+     * is {@link CompactElementResolver#NONE} (no type has one). A codec attaches a real resolver — the jackson
+     * codecs read the {@code @EveryConfigCompactValue}/{@code @EveryConfigCompactCreator} annotations by default
+     * and compose a consumer-supplied resolver ahead of them. There is no global registry.
+     */
+    default CompactElementResolver compactElementResolver() {
+        return CompactElementResolver.NONE;
+    }
 }

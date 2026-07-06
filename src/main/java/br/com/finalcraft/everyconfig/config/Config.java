@@ -24,7 +24,7 @@ import br.com.finalcraft.everyconfig.core.comment.CommentType;
 import br.com.finalcraft.everyconfig.core.tree.DPath;
 import br.com.finalcraft.everyconfig.io.watcher.Watcher;
 import br.com.finalcraft.everyconfig.io.watcher.Fingerprint;
-import br.com.finalcraft.everyconfig.selfdescribe.EveryConfigElementString;
+import br.com.finalcraft.everyconfig.selfdescribe.CompactElementCodec;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -261,11 +261,13 @@ public class Config implements AutoCloseable {
             writeValue(path, KeyIndexer.toIndexed((Collection<?>) value, codec.getObjectMapper()), merge);
             return;
         }
-        // A collection whose element type declares a compact element form serializes as a string-list (one
+        // A collection whose element type resolves to a compact element form serializes as a string-list (one
         // compact line per element), even though the SAME type stays rich as a solo value/field — the mapper
         // never sees the compact form. The string array is a preformed node, so it takes the raw-replace path.
-        if (value instanceof Collection && isElementStringCollection((Collection<?>) value)) {
-            writeValue(path, ElementStringList.toStringArray((Collection<?>) value, nodes), merge);
+        // The compact form is resolved per-codec, so a codec-less Config never takes this path.
+        if (codec != null && value instanceof Collection && isCompactElementCollection((Collection<?>) value)) {
+            writeValue(path, ElementStringList.toStringArray((Collection<?>) value, nodes,
+                    codec.compactElementResolver()), merge);
             return;
         }
         final JsonNode node = coercion.toNode(value);
@@ -294,11 +296,11 @@ public class Config implements AutoCloseable {
         setLeafValue(path, node);
     }
 
-    /** True when {@code value} is a genuine entity to merge — not a {@code Map}/{@link JsonNode} or a
-     *  self-describing value, which also serialize to an object but must be set raw (their own form owns the
-     *  shape, so there is no bean schema to merge against). */
+    /** True when {@code value} is a genuine entity to merge — not a {@code Map}/{@link JsonNode}, which also
+     *  serializes to an object but must be set raw (it is a preformed node, so there is no bean schema to merge
+     *  against). */
     private static boolean isEntityValue(final Object value) {
-        return !TypeFamily.isPreformedNodeOrMap(value) && !TypeFamily.isSelfDescribing(value);
+        return !TypeFamily.isPreformedNodeOrMap(value);
     }
 
     /** True when {@code collection}'s element type carries {@code @KeyIndex} (classified from the first
@@ -310,11 +312,12 @@ public class Config implements AutoCloseable {
         return false;
     }
 
-    /** True when {@code collection}'s elements declare a compact element form ({@code EveryConfigElementString},
-     *  classified from the first non-null element); an empty collection is a plain array. */
-    private static boolean isElementStringCollection(final Collection<?> collection) {
+    /** True when {@code collection}'s element type resolves to a compact element form via this codec's resolver
+     *  (classified from the first non-null element); an empty collection is a plain array. Only reached with a
+     *  non-null {@code codec}. */
+    private boolean isCompactElementCollection(final Collection<?> collection) {
         for (final Object e : collection) {
-            return e instanceof EveryConfigElementString;
+            return e != null && codec.compactElementResolver().resolve(e.getClass()) != null;
         }
         return false;
     }
@@ -661,10 +664,13 @@ public class Config implements AutoCloseable {
             final List<LoadIssue> sink = issues != null ? issues : new ArrayList<LoadIssue>();
             return KeyIndexer.fromIndexed(node, elementType, mapper, sink);
         }
-        // A type with a compact element form is read tolerantly: a textual element via its fromElementString
-        // factory, an object element via the normal rich bind (so a list mixing both shapes still reads).
-        if (EveryConfigElementString.class.isAssignableFrom(elementType)) {
-            return ElementStringList.fromArray(node, elementType, mapper);
+        // A type with a compact element form is read tolerantly: a textual element via its compact codec, an
+        // object element via the normal rich bind (so a list mixing both shapes still reads).
+        @SuppressWarnings("unchecked")
+        final CompactElementCodec<T> compact =
+                (CompactElementCodec<T>) codec.compactElementResolver().resolve(elementType);
+        if (compact != null) {
+            return ElementStringList.fromArray(node, elementType, mapper, compact);
         }
         final List<T> out = new ArrayList<>();
         if (!(node instanceof ArrayNode)) {

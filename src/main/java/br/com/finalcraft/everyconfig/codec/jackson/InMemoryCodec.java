@@ -4,6 +4,8 @@ import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CodecException;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.ECMapperProfiles;
+import br.com.finalcraft.everyconfig.selfdescribe.AnnotationCompactElementResolver;
+import br.com.finalcraft.everyconfig.selfdescribe.CompactElementResolver;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,14 +33,23 @@ public final class InMemoryCodec implements Codec {
     public static final InMemoryCodec INSTANCE = new InMemoryCodec();
 
     private final ObjectMapper mapper;
+    private final CompactElementResolver compactResolver;
 
     public InMemoryCodec() {
         this.mapper = DEFAULT;
+        this.compactResolver = AnnotationCompactElementResolver.INSTANCE;
     }
 
     /** Uses an isolated copy of the user's mapper so a later external mutation cannot leak in. */
     public InMemoryCodec(final ObjectMapper userMapper) {
+        this(userMapper, null);
+    }
+
+    /** As {@link #InMemoryCodec(ObjectMapper)}, plus a consumer {@link CompactElementResolver} consulted AHEAD
+     *  of the annotation resolver when classifying a collection's element for its compact form. */
+    public InMemoryCodec(final ObjectMapper userMapper, final CompactElementResolver compactResolver) {
         this.mapper = ECMapperProfiles.isolate(userMapper, () -> DEFAULT);
+        this.compactResolver = CompactElementResolver.compose(compactResolver, AnnotationCompactElementResolver.INSTANCE);
     }
 
     @Override
@@ -59,6 +70,11 @@ public final class InMemoryCodec implements Codec {
     @Override
     public ObjectMapper getObjectMapper() {
         return mapper;
+    }
+
+    @Override
+    public CompactElementResolver compactElementResolver() {
+        return compactResolver;
     }
 
     @Override

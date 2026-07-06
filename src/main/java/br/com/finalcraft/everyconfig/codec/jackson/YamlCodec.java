@@ -5,6 +5,8 @@ import br.com.finalcraft.everyconfig.codec.CodecException;
 import br.com.finalcraft.everyconfig.codec.CommentAware;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.ECMapperProfiles;
+import br.com.finalcraft.everyconfig.selfdescribe.AnnotationCompactElementResolver;
+import br.com.finalcraft.everyconfig.selfdescribe.CompactElementResolver;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
@@ -46,14 +48,23 @@ public final class YamlCodec implements Codec, CommentAware {
 
     /** Dumps single leaf values only; kept separate so structure layout never flows through it. */
     private final ObjectMapper mapper;
+    private final CompactElementResolver compactResolver;
 
     public YamlCodec() {
         this.mapper = DEFAULT;
+        this.compactResolver = AnnotationCompactElementResolver.INSTANCE;
     }
 
     /** Uses an isolated copy of the user's mapper so a later external mutation cannot leak in. */
     public YamlCodec(final ObjectMapper userMapper) {
+        this(userMapper, null);
+    }
+
+    /** As {@link #YamlCodec(ObjectMapper)}, plus a consumer {@link CompactElementResolver} consulted AHEAD of
+     *  the annotation resolver when classifying a collection's element for its compact form. */
+    public YamlCodec(final ObjectMapper userMapper, final CompactElementResolver compactResolver) {
         this.mapper = ECMapperProfiles.isolate(userMapper, () -> DEFAULT);
+        this.compactResolver = CompactElementResolver.compose(compactResolver, AnnotationCompactElementResolver.INSTANCE);
     }
 
     /** SnakeYAML's default input cap is 3 MB; a large config (tens of thousands of keys) exceeds it and the
@@ -93,6 +104,11 @@ public final class YamlCodec implements Codec, CommentAware {
     @Override
     public ObjectMapper getObjectMapper() {
         return mapper;
+    }
+
+    @Override
+    public CompactElementResolver compactElementResolver() {
+        return compactResolver;
     }
 
     // ---- text <-> tree --------------------------------------------------

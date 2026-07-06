@@ -2,6 +2,8 @@ package br.com.finalcraft.everyconfig.config.data;
 
 import br.com.finalcraft.everyconfig.annotation.Comment;
 import br.com.finalcraft.everyconfig.annotation.CommentMode;
+import br.com.finalcraft.everyconfig.annotation.EveryConfigCompactCreator;
+import br.com.finalcraft.everyconfig.annotation.EveryConfigCompactValue;
 import br.com.finalcraft.everyconfig.annotation.KeyIndex;
 import br.com.finalcraft.everyconfig.annotation.Key;
 import br.com.finalcraft.everyconfig.annotation.KeyTransformCase;
@@ -14,9 +16,6 @@ import br.com.finalcraft.everyconfig.binding.ConfigContext;
 import br.com.finalcraft.everyconfig.binding.ConfigLifecycle;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.binding.LoadIssueAware;
-import br.com.finalcraft.everyconfig.selfdescribe.EveryConfigElementString;
-import br.com.finalcraft.everyconfig.selfdescribe.EveryConfigMap;
-import br.com.finalcraft.everyconfig.selfdescribe.EveryConfigString;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
@@ -560,85 +559,17 @@ public final class Dtos {
         public CodeEnum mode;
     }
 
-    // ===================== self-describing via marker interfaces =====================
-
-    /**
-     * Scalar self-describing via the {@link EveryConfigString} marker interface (no annotations). The read
-     * half is the convention factory {@code fromConfigString(String)}.
-     */
-    @EqualsAndHashCode
-    @ToString
-    public static class MarkerScalar implements EveryConfigString<MarkerScalar> {
-        public final int a;
-        public final int b;
-
-        public MarkerScalar(final int a, final int b) {
-            this.a = a;
-            this.b = b;
-        }
-
-        @Override
-        public String toConfigString() {
-            return a + "x" + b;
-        }
-
-        public static MarkerScalar fromConfigString(final String s) {
-            final String[] parts = s.split("x");
-            return new MarkerScalar(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
-        }
-
-    }
-
-    /**
-     * Structured self-describing via the {@link EveryConfigMap} marker interface. The read half is the
-     * convention factory {@code fromConfigMap(Map)}.
-     */
-    @EqualsAndHashCode
-    @ToString
-    public static class MarkerMap implements EveryConfigMap<MarkerMap> {
-        public final String host;
-        public final int port;
-
-        public MarkerMap(final String host, final int port) {
-            this.host = host;
-            this.port = port;
-        }
-
-        @Override
-        public Map<String, Object> toConfigMap() {
-            final Map<String, Object> m = new LinkedHashMap<>();
-            m.put("host", host);
-            m.put("port", port);
-            return m;
-        }
-
-        public static MarkerMap fromConfigMap(final Map<String, Object> m) {
-            return new MarkerMap((String) m.get("host"), ((Number) m.get("port")).intValue());
-        }
-
-    }
-
-    /** Holds marker-interface types solo-as-a-field and inside a list, exercising every context. */
-    @EqualsAndHashCode
-    @ToString
-    public static class MarkerHolder {
-        public MarkerScalar scalar;
-        public MarkerMap endpoint;
-        public List<MarkerScalar> points = new ArrayList<MarkerScalar>();
-
-    }
-
     // ===================== distinct element form (rich solo, compact in a list) =====================
 
     /**
-     * A position with two forms: a RICH object {@code {x,y,z}} when solo/a field (its plain Jackson form),
-     * and a COMPACT string {@code "x y z"} when written as a collection element via
-     * {@link EveryConfigElementString}. Implementing that interface does NOT change the solo form — only the
-     * opt-in {@code setElementList} uses the compact one.
+     * A position with two forms: a RICH object {@code {x,y,z}} when solo/a field (its plain Jackson form), and
+     * a COMPACT string {@code "x y z"} when written as a collection element — declared with
+     * {@link EveryConfigCompactValue} / {@link EveryConfigCompactCreator}. The annotations do NOT change the
+     * solo form (Jackson ignores them); only the dynamic collection path uses the compact one.
      */
     @EqualsAndHashCode
     @ToString
-    public static class DualFormPos implements EveryConfigElementString<DualFormPos> {
+    public static class DualFormPos {
         public int x;
         public int y;
         public int z;
@@ -652,17 +583,38 @@ public final class Dtos {
             this.z = z;
         }
 
-        @Override
+        @EveryConfigCompactValue
         public String toElementString() {
             return x + " " + y + " " + z;
         }
 
+        @EveryConfigCompactCreator
         public static DualFormPos fromElementString(final String s) {
             final String[] parts = s.trim().split("\\s+");
             return new DualFormPos(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]),
                     Integer.parseInt(parts[2]));
         }
 
+    }
+
+    /**
+     * A plain rich position with NO compact annotations — the stand-in for a third-party type EveryConfig cannot
+     * annotate. It gets a compact-in-list form only from a consumer {@code CompactElementResolver} attached to
+     * the codec; its solo/field form stays a rich object.
+     */
+    @EqualsAndHashCode
+    @ToString
+    public static class PlainPos {
+        public int x;
+        public int y;
+
+        public PlainPos() {
+        }
+
+        public PlainPos(final int x, final int y) {
+            this.x = x;
+            this.y = y;
+        }
     }
 
     // ===================== helpers =====================
