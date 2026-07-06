@@ -306,18 +306,10 @@ Coord back = cfg.getValue("spawn", Coord.class);
 ```
 
 An **enum** that declares a `@JsonValue` keeps its custom form too (a plain enum still serializes by `name()`).
+`@JsonValue`/`@JsonCreator` are the whole story for a self-describing scalar or object — and a type you cannot
+edit gets the same treatment through a Jackson **mixin** registered on the codec's mapper.
 
-**Marker interfaces (no annotations).** Prefer an explicit contract? Implement `EveryConfigString<T>` (a compact
-string) or `EveryConfigMap<T>` (a structured object); the read half is a static factory found by convention:
-
-```java
-class Coord implements EveryConfigString<Coord> {
-    @Override public String toConfigString()       { return x + ":" + y; }
-    public static Coord fromConfigString(String s) { /* parse */ }   // convention: fromConfigString / fromConfigMap
-}
-```
-
-Both forms need a codec-backed `Config` (`Config.open` / `Config.inMemory`); a bare `new Config()` takes only
+A codec-backed `Config` (`Config.open` / `Config.inMemory`) is required; a bare `new Config()` takes only
 native values. Note that `getValue(path)` **without** a type token still returns the raw string/map — a
 self-describing codec reaches the typed reads and binding, not the untyped dynamic read.
 
@@ -352,14 +344,14 @@ list together with any read issues (e.g. a stray body id that disagreed with its
 ### A compact element form
 
 A type can be **rich as a solo value/field but compact inside a list** — no wall of `{x,y,z}` objects for a
-long `List<Pos>`. Implement `EveryConfigElementString<T>` (which, unlike `EveryConfigString`, leaves the solo
-form untouched); then — exactly like `@KeyIndex` — `setValue`/`getList` **auto-detect** it for a collection:
+long `List<Pos>`. Declare the compact form with `@EveryConfigCompactValue` (encode) + `@EveryConfigCompactCreator`
+(decode); then — exactly like `@KeyIndex` — `setValue`/`getList` **auto-detect** it for a collection:
 
 ```java
-class Pos implements EveryConfigElementString<Pos> {         // rich solo, compact in a list
+class Pos {                                                  // rich solo, compact in a list
     int x, y, z;
-    @Override public String toElementString()       { return x + " " + y + " " + z; }
-    public static Pos fromElementString(String s)   { /* parse "x y z" */ }
+    @EveryConfigCompactValue   String toLine()             { return x + " " + y + " " + z; }
+    @EveryConfigCompactCreator static Pos fromLine(String s) { /* parse "x y z" */ }
 }
 
 cfg.setValue("home", new Pos(1, 2, 3));                      // solo -> { x, y, z }        (rich)
@@ -367,8 +359,10 @@ cfg.setValue("spots", spots);                                // list -> ["4 5 6"
 List<Pos> back = cfg.getList("spots", Pos.class);            // tolerant: reads strings OR objects
 ```
 
-Nested `List<T>` fields inside a bound POJO stay rich for now — the compact form is auto-detected on the
-dynamic `setValue` / `getList` path, the same place `@KeyIndex` intercepts.
+Jackson ignores those annotations, so the solo/field form stays rich; only the dynamic `setValue`/`getList`
+path uses the compact one. **For a type you cannot annotate**, attach a `CompactElementResolver` to the codec
+(`new YamlCodec(mapper, resolver)`) mapping the type to a `CompactElementCodec` — a per-codec seam, no global
+registry. Nested `List<T>` fields inside a bound POJO stay rich for now.
 
 ---
 
