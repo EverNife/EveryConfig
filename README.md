@@ -12,7 +12,7 @@ data, never clobbers it.
 ![Runtime](https://img.shields.io/badge/runtime-Java%208%2B-blue)
 ![Build](https://img.shields.io/badge/build-JDK%2025-orange)
 ![Formats](https://img.shields.io/badge/formats-YAML%20%7C%20JSON%20%7C%20TOML%20%7C%20JSONC-green)
-![Version](https://img.shields.io/badge/version-1.1.0-informational)
+![Version](https://img.shields.io/badge/version-1.0.1-informational)
 
 </div>
 
@@ -89,7 +89,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'br.com.finalcraft:EveryConfig:1.1.0'
+    implementation 'br.com.finalcraft:EveryConfig:1.0.1'
 }
 ```
 
@@ -104,7 +104,7 @@ dependencies {
 <dependency>
   <groupId>br.com.finalcraft</groupId>
   <artifactId>EveryConfig</artifactId>
-  <version>1.1.0</version>
+  <version>1.0.1</version>
 </dependency>
 ```
 
