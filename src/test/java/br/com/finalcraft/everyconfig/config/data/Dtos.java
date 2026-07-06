@@ -14,8 +14,11 @@ import br.com.finalcraft.everyconfig.binding.ConfigContext;
 import br.com.finalcraft.everyconfig.binding.ConfigLifecycle;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.binding.LoadIssueAware;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -29,6 +32,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
@@ -454,6 +458,111 @@ public final class Dtos {
     public static class PolymorphicPojo {
         public Shape shape;
         public String label = "shapes";
+    }
+
+    // ===================== self-describing types (Jackson-native) =====================
+
+    /**
+     * Scalar self-describing type: serializes to a single string via {@code @JsonValue} and rebuilds from
+     * it via a {@code @JsonCreator} static factory. Round-trips through EveryConfig with NO central
+     * registration — purely by virtue of the Jackson-first shared mapper honoring the annotations.
+     */
+    public static class SelfDescribingScalar {
+        public final int x;
+        public final int y;
+
+        public SelfDescribingScalar(final int x, final int y) {
+            this.x = x;
+            this.y = y;
+        }
+
+        @JsonValue
+        public String toConfigString() {
+            return x + ":" + y;
+        }
+
+        @JsonCreator
+        public static SelfDescribingScalar fromConfigString(final String s) {
+            final String[] parts = s.split(":");
+            return new SelfDescribingScalar(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
+        }
+
+        @Override
+        public boolean equals(final Object o) {
+            if (!(o instanceof SelfDescribingScalar)) {
+                return false;
+            }
+            final SelfDescribingScalar that = (SelfDescribingScalar) o;
+            return x == that.x && y == that.y;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(x, y);
+        }
+
+        @Override
+        public String toString() {
+            return "SelfDescribingScalar(" + toConfigString() + ")";
+        }
+    }
+
+    /**
+     * Immutable object self-describing type: serializes to an object via its public fields and rebuilds via
+     * a {@code @JsonCreator} constructor with {@code @JsonProperty} args (no no-arg constructor, no setters).
+     * Exercises the creator-with-properties path through the shared mapper.
+     */
+    public static class SelfDescribingObject {
+        public final int width;
+        public final int height;
+
+        @JsonCreator
+        public SelfDescribingObject(@JsonProperty("width") final int width,
+                                    @JsonProperty("height") final int height) {
+            this.width = width;
+            this.height = height;
+        }
+
+        @Override
+        public boolean equals(final Object o) {
+            if (!(o instanceof SelfDescribingObject)) {
+                return false;
+            }
+            final SelfDescribingObject that = (SelfDescribingObject) o;
+            return width == that.width && height == that.height;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(width, height);
+        }
+
+        @Override
+        public String toString() {
+            return "SelfDescribingObject(" + width + "x" + height + ")";
+        }
+    }
+
+    /** Holds self-describing types solo-as-a-field and inside a list, exercising every serialization context. */
+    public static class SelfDescribingHolder {
+        public SelfDescribingScalar coord;
+        public SelfDescribingObject size;
+        public List<SelfDescribingScalar> path = new ArrayList<SelfDescribingScalar>();
+
+        @Override
+        public boolean equals(final Object o) {
+            if (!(o instanceof SelfDescribingHolder)) {
+                return false;
+            }
+            final SelfDescribingHolder that = (SelfDescribingHolder) o;
+            return Objects.equals(coord, that.coord) && Objects.equals(size, that.size)
+                    && Objects.equals(path, that.path);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(coord, size, path);
+        }
     }
 
     // ===================== helpers =====================
