@@ -23,7 +23,9 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.annotation.JsonValue;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -35,7 +37,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
@@ -470,6 +471,8 @@ public final class Dtos {
      * it via a {@code @JsonCreator} static factory. Round-trips through EveryConfig with NO central
      * registration — purely by virtue of the Jackson-first shared mapper honoring the annotations.
      */
+    @EqualsAndHashCode
+    @ToString
     public static class SelfDescribingScalar {
         public final int x;
         public final int y;
@@ -490,24 +493,6 @@ public final class Dtos {
             return new SelfDescribingScalar(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
         }
 
-        @Override
-        public boolean equals(final Object o) {
-            if (!(o instanceof SelfDescribingScalar)) {
-                return false;
-            }
-            final SelfDescribingScalar that = (SelfDescribingScalar) o;
-            return x == that.x && y == that.y;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(x, y);
-        }
-
-        @Override
-        public String toString() {
-            return "SelfDescribingScalar(" + toConfigString() + ")";
-        }
     }
 
     /**
@@ -515,6 +500,8 @@ public final class Dtos {
      * a {@code @JsonCreator} constructor with {@code @JsonProperty} args (no no-arg constructor, no setters).
      * Exercises the creator-with-properties path through the shared mapper.
      */
+    @EqualsAndHashCode
+    @ToString
     public static class SelfDescribingObject {
         public final int width;
         public final int height;
@@ -526,46 +513,16 @@ public final class Dtos {
             this.height = height;
         }
 
-        @Override
-        public boolean equals(final Object o) {
-            if (!(o instanceof SelfDescribingObject)) {
-                return false;
-            }
-            final SelfDescribingObject that = (SelfDescribingObject) o;
-            return width == that.width && height == that.height;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(width, height);
-        }
-
-        @Override
-        public String toString() {
-            return "SelfDescribingObject(" + width + "x" + height + ")";
-        }
     }
 
     /** Holds self-describing types solo-as-a-field and inside a list, exercising every serialization context. */
+    @EqualsAndHashCode
+    @ToString
     public static class SelfDescribingHolder {
         public SelfDescribingScalar coord;
         public SelfDescribingObject size;
         public List<SelfDescribingScalar> path = new ArrayList<SelfDescribingScalar>();
 
-        @Override
-        public boolean equals(final Object o) {
-            if (!(o instanceof SelfDescribingHolder)) {
-                return false;
-            }
-            final SelfDescribingHolder that = (SelfDescribingHolder) o;
-            return Objects.equals(coord, that.coord) && Objects.equals(size, that.size)
-                    && Objects.equals(path, that.path);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(coord, size, path);
-        }
     }
 
     /**
@@ -609,6 +566,8 @@ public final class Dtos {
      * Scalar self-describing via the {@link EveryConfigString} marker interface (no annotations). The read
      * half is the convention factory {@code fromConfigString(String)}.
      */
+    @EqualsAndHashCode
+    @ToString
     public static class MarkerScalar implements EveryConfigString<MarkerScalar> {
         public final int a;
         public final int b;
@@ -628,30 +587,14 @@ public final class Dtos {
             return new MarkerScalar(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
         }
 
-        @Override
-        public boolean equals(final Object o) {
-            if (!(o instanceof MarkerScalar)) {
-                return false;
-            }
-            final MarkerScalar that = (MarkerScalar) o;
-            return a == that.a && b == that.b;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(a, b);
-        }
-
-        @Override
-        public String toString() {
-            return "MarkerScalar(" + toConfigString() + ")";
-        }
     }
 
     /**
      * Structured self-describing via the {@link EveryConfigMap} marker interface. The read half is the
      * convention factory {@code fromConfigMap(Map)}.
      */
+    @EqualsAndHashCode
+    @ToString
     public static class MarkerMap implements EveryConfigMap<MarkerMap> {
         public final String host;
         public final int port;
@@ -673,46 +616,16 @@ public final class Dtos {
             return new MarkerMap((String) m.get("host"), ((Number) m.get("port")).intValue());
         }
 
-        @Override
-        public boolean equals(final Object o) {
-            if (!(o instanceof MarkerMap)) {
-                return false;
-            }
-            final MarkerMap that = (MarkerMap) o;
-            return port == that.port && Objects.equals(host, that.host);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(host, port);
-        }
-
-        @Override
-        public String toString() {
-            return "MarkerMap(" + host + ":" + port + ")";
-        }
     }
 
     /** Holds marker-interface types solo-as-a-field and inside a list, exercising every context. */
+    @EqualsAndHashCode
+    @ToString
     public static class MarkerHolder {
         public MarkerScalar scalar;
         public MarkerMap endpoint;
         public List<MarkerScalar> points = new ArrayList<MarkerScalar>();
 
-        @Override
-        public boolean equals(final Object o) {
-            if (!(o instanceof MarkerHolder)) {
-                return false;
-            }
-            final MarkerHolder that = (MarkerHolder) o;
-            return Objects.equals(scalar, that.scalar) && Objects.equals(endpoint, that.endpoint)
-                    && Objects.equals(points, that.points);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(scalar, endpoint, points);
-        }
     }
 
     // ===================== distinct element form (rich solo, compact in a list) =====================
@@ -723,6 +636,8 @@ public final class Dtos {
      * {@link EveryConfigElementString}. Implementing that interface does NOT change the solo form — only the
      * opt-in {@code setElementList} uses the compact one.
      */
+    @EqualsAndHashCode
+    @ToString
     public static class DualFormPos implements EveryConfigElementString<DualFormPos> {
         public int x;
         public int y;
@@ -748,24 +663,6 @@ public final class Dtos {
                     Integer.parseInt(parts[2]));
         }
 
-        @Override
-        public boolean equals(final Object o) {
-            if (!(o instanceof DualFormPos)) {
-                return false;
-            }
-            final DualFormPos that = (DualFormPos) o;
-            return x == that.x && y == that.y && z == that.z;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(x, y, z);
-        }
-
-        @Override
-        public String toString() {
-            return "DualFormPos(" + toElementString() + ")";
-        }
     }
 
     // ===================== helpers =====================
