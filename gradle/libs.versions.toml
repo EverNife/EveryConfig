@@ -1,6 +1,6 @@
 [versions]
 # Project version - single source of truth (consumed by build.gradle).
-everyconfig = "1.0.1"
+everyconfig = "1.1.0"
 
 # Jackson is the serialization engine; one BOM pin governs the whole family. Latest 2.x (Java 8 baseline);
 # Jackson 3 (tools.jackson.*, Java 17) would be a EveryConfig major, so it stays out of the 1.x line.
