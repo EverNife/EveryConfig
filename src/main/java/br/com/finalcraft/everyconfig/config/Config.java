@@ -6,6 +6,7 @@ import br.com.finalcraft.everyconfig.io.ConfigExecutors;
 import br.com.finalcraft.everyconfig.binding.BindOptions;
 import br.com.finalcraft.everyconfig.binding.BindResult;
 import br.com.finalcraft.everyconfig.binding.EntityBinder;
+import br.com.finalcraft.everyconfig.binding.merge.ElementStringList;
 import br.com.finalcraft.everyconfig.binding.merge.KeyIndexer;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.codec.Codec;
@@ -433,6 +434,31 @@ public class Config implements AutoCloseable {
         }
     }
 
+    /**
+     * Write {@code items} as a COMPACT string-list — each element via its
+     * {@link br.com.finalcraft.everyconfig.selfdescribe.EveryConfigElementString#toElementString()} — the
+     * opt-in counterpart of {@link #setValue(String, Object)} for a collection whose element type declares a
+     * distinct compact element form. The element type's SOLO form is untouched: a plain {@code setValue} of
+     * the same type still writes its rich form; only this call chooses the compact one. Read back with
+     * {@link #getElementList(String, Class)}. A {@code null} collection removes the path; an empty one stores
+     * an empty array. Each element must implement {@code EveryConfigElementString} (a mismatch throws).
+     */
+    public void setElementList(final String path, final Collection<?> items) {
+        if (items == null) {
+            setValue(path, null);
+            return;
+        }
+        setValue(path, ElementStringList.toStringArray(items, nodes));
+    }
+
+    /** As {@link #setElementList(String, Collection)}, also setting (overwriting) the block comment at {@code path}. */
+    public void setElementList(final String path, final Collection<?> items, final String comment) {
+        setElementList(path, items);
+        if (items != null && comment != null) {
+            setComment(path, comment);
+        }
+    }
+
     private void setRoot(final Object value) {
         dirty = true;
         if (value == null) {
@@ -625,6 +651,18 @@ public class Config implements AutoCloseable {
         final List<LoadIssue> issues = new ArrayList<>();
         final List<T> out = readList(path, elementType, codec, issues);
         return new BindResult<>(out, issues);
+    }
+
+    /**
+     * Read the list at {@code path} written by {@link #setElementList(String, Collection)}, tolerantly: a
+     * textual element is rebuilt via the element type's {@code fromElementString} factory, an object element
+     * via the normal rich bind (so a list holding both an old compact string and a rich object both read).
+     * A bad element is skipped (lenient, like {@link #getList(String, Class)}).
+     *
+     * @throws IllegalStateException if this config was not opened with a codec (e.g. {@code new Config()})
+     */
+    public <T> List<T> getElementList(final String path, final Class<T> type) {
+        return ElementStringList.fromArray(getNode(path), type, requireCodec().getObjectMapper());
     }
 
     /**
