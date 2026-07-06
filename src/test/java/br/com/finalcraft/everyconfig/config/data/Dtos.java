@@ -14,6 +14,8 @@ import br.com.finalcraft.everyconfig.binding.ConfigContext;
 import br.com.finalcraft.everyconfig.binding.ConfigLifecycle;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.binding.LoadIssueAware;
+import br.com.finalcraft.everyconfig.selfdescribe.EveryConfigMap;
+import br.com.finalcraft.everyconfig.selfdescribe.EveryConfigString;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
@@ -598,6 +600,118 @@ public final class Dtos {
     /** Holds a {@code @JsonValue} enum as a field, to exercise the mapper (POJO-field) serialization path. */
     public static class JsonValueEnumHolder {
         public CodeEnum mode;
+    }
+
+    // ===================== self-describing via marker interfaces =====================
+
+    /**
+     * Scalar self-describing via the {@link EveryConfigString} marker interface (no annotations). The read
+     * half is the convention factory {@code fromConfigString(String)}.
+     */
+    public static class MarkerScalar implements EveryConfigString<MarkerScalar> {
+        public final int a;
+        public final int b;
+
+        public MarkerScalar(final int a, final int b) {
+            this.a = a;
+            this.b = b;
+        }
+
+        @Override
+        public String toConfigString() {
+            return a + "x" + b;
+        }
+
+        public static MarkerScalar fromConfigString(final String s) {
+            final String[] parts = s.split("x");
+            return new MarkerScalar(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
+        }
+
+        @Override
+        public boolean equals(final Object o) {
+            if (!(o instanceof MarkerScalar)) {
+                return false;
+            }
+            final MarkerScalar that = (MarkerScalar) o;
+            return a == that.a && b == that.b;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(a, b);
+        }
+
+        @Override
+        public String toString() {
+            return "MarkerScalar(" + toConfigString() + ")";
+        }
+    }
+
+    /**
+     * Structured self-describing via the {@link EveryConfigMap} marker interface. The read half is the
+     * convention factory {@code fromConfigMap(Map)}.
+     */
+    public static class MarkerMap implements EveryConfigMap<MarkerMap> {
+        public final String host;
+        public final int port;
+
+        public MarkerMap(final String host, final int port) {
+            this.host = host;
+            this.port = port;
+        }
+
+        @Override
+        public Map<String, Object> toConfigMap() {
+            final Map<String, Object> m = new LinkedHashMap<>();
+            m.put("host", host);
+            m.put("port", port);
+            return m;
+        }
+
+        public static MarkerMap fromConfigMap(final Map<String, Object> m) {
+            return new MarkerMap((String) m.get("host"), ((Number) m.get("port")).intValue());
+        }
+
+        @Override
+        public boolean equals(final Object o) {
+            if (!(o instanceof MarkerMap)) {
+                return false;
+            }
+            final MarkerMap that = (MarkerMap) o;
+            return port == that.port && Objects.equals(host, that.host);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(host, port);
+        }
+
+        @Override
+        public String toString() {
+            return "MarkerMap(" + host + ":" + port + ")";
+        }
+    }
+
+    /** Holds marker-interface types solo-as-a-field and inside a list, exercising every context. */
+    public static class MarkerHolder {
+        public MarkerScalar scalar;
+        public MarkerMap endpoint;
+        public List<MarkerScalar> points = new ArrayList<MarkerScalar>();
+
+        @Override
+        public boolean equals(final Object o) {
+            if (!(o instanceof MarkerHolder)) {
+                return false;
+            }
+            final MarkerHolder that = (MarkerHolder) o;
+            return Objects.equals(scalar, that.scalar) && Objects.equals(endpoint, that.endpoint)
+                    && Objects.equals(points, that.points);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(scalar, endpoint, points);
+        }
     }
 
     // ===================== helpers =====================

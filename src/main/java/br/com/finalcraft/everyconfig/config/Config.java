@@ -285,10 +285,11 @@ public class Config implements AutoCloseable {
         setLeafValue(path, node);
     }
 
-    /** True when {@code value} is a genuine entity to merge — not a {@code Map} or {@link JsonNode}, which
-     *  also serialize to an object but must be set raw (no schema to merge against). */
+    /** True when {@code value} is a genuine entity to merge — not a {@code Map}/{@link JsonNode} or a
+     *  self-describing value, which also serialize to an object but must be set raw (their own form owns the
+     *  shape, so there is no bean schema to merge against). */
     private static boolean isEntityValue(final Object value) {
-        return !TypeFamily.isPreformedNodeOrMap(value);
+        return !TypeFamily.isPreformedNodeOrMap(value) && !TypeFamily.isSelfDescribing(value);
     }
 
     /** True when {@code collection}'s element type carries {@code @KeyIndex} (classified from the first
