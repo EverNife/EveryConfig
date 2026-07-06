@@ -24,6 +24,7 @@ import br.com.finalcraft.everyconfig.core.comment.CommentType;
 import br.com.finalcraft.everyconfig.core.tree.DPath;
 import br.com.finalcraft.everyconfig.io.watcher.Watcher;
 import br.com.finalcraft.everyconfig.io.watcher.Fingerprint;
+import br.com.finalcraft.everyconfig.selfdescribe.EveryConfigElementString;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -260,6 +261,13 @@ public class Config implements AutoCloseable {
             writeValue(path, KeyIndexer.toIndexed((Collection<?>) value, codec.getObjectMapper()), merge);
             return;
         }
+        // A collection whose element type declares a compact element form serializes as a string-list (one
+        // compact line per element), even though the SAME type stays rich as a solo value/field — the mapper
+        // never sees the compact form. The string array is a preformed node, so it takes the raw-replace path.
+        if (value instanceof Collection && isElementStringCollection((Collection<?>) value)) {
+            writeValue(path, ElementStringList.toStringArray((Collection<?>) value, nodes), merge);
+            return;
+        }
         final JsonNode node = coercion.toNode(value);
         if (node == null || node.isMissingNode()) {
             if (root) {
@@ -298,6 +306,15 @@ public class Config implements AutoCloseable {
     private static boolean isKeyIndexedCollection(final Collection<?> collection) {
         for (final Object e : collection) {
             return e != null && KeyIndexer.isKeyIndexed(e.getClass());
+        }
+        return false;
+    }
+
+    /** True when {@code collection}'s elements declare a compact element form ({@code EveryConfigElementString},
+     *  classified from the first non-null element); an empty collection is a plain array. */
+    private static boolean isElementStringCollection(final Collection<?> collection) {
+        for (final Object e : collection) {
+            return e instanceof EveryConfigElementString;
         }
         return false;
     }
@@ -430,31 +447,6 @@ public class Config implements AutoCloseable {
     public void mergeValue(final String path, final Object value, final String comment) {
         mergeValue(path, value);
         if (value != null && comment != null) {
-            setComment(path, comment);
-        }
-    }
-
-    /**
-     * Write {@code items} as a COMPACT string-list — each element via its
-     * {@link br.com.finalcraft.everyconfig.selfdescribe.EveryConfigElementString#toElementString()} — the
-     * opt-in counterpart of {@link #setValue(String, Object)} for a collection whose element type declares a
-     * distinct compact element form. The element type's SOLO form is untouched: a plain {@code setValue} of
-     * the same type still writes its rich form; only this call chooses the compact one. Read back with
-     * {@link #getElementList(String, Class)}. A {@code null} collection removes the path; an empty one stores
-     * an empty array. Each element must implement {@code EveryConfigElementString} (a mismatch throws).
-     */
-    public void setElementList(final String path, final Collection<?> items) {
-        if (items == null) {
-            setValue(path, null);
-            return;
-        }
-        setValue(path, ElementStringList.toStringArray(items, nodes));
-    }
-
-    /** As {@link #setElementList(String, Collection)}, also setting (overwriting) the block comment at {@code path}. */
-    public void setElementList(final String path, final Collection<?> items, final String comment) {
-        setElementList(path, items);
-        if (items != null && comment != null) {
             setComment(path, comment);
         }
     }
@@ -653,17 +645,6 @@ public class Config implements AutoCloseable {
         return new BindResult<>(out, issues);
     }
 
-    /**
-     * Read the list at {@code path} written by {@link #setElementList(String, Collection)}, tolerantly: a
-     * textual element is rebuilt via the element type's {@code fromElementString} factory, an object element
-     * via the normal rich bind (so a list holding both an old compact string and a rich object both read).
-     * A bad element is skipped (lenient, like {@link #getList(String, Class)}).
-     *
-     * @throws IllegalStateException if this config was not opened with a codec (e.g. {@code new Config()})
-     */
-    public <T> List<T> getElementList(final String path, final Class<T> type) {
-        return ElementStringList.fromArray(getNode(path), type, requireCodec().getObjectMapper());
-    }
 
     /**
      * Read the list at {@code path}. When {@code elementType} carries {@code @KeyIndex} AND the stored node is
@@ -679,6 +660,11 @@ public class Config implements AutoCloseable {
         if (node instanceof ObjectNode && KeyIndexer.isKeyIndexed(elementType)) {
             final List<LoadIssue> sink = issues != null ? issues : new ArrayList<LoadIssue>();
             return KeyIndexer.fromIndexed(node, elementType, mapper, sink);
+        }
+        // A type with a compact element form is read tolerantly: a textual element via its fromElementString
+        // factory, an object element via the normal rich bind (so a list mixing both shapes still reads).
+        if (EveryConfigElementString.class.isAssignableFrom(elementType)) {
+            return ElementStringList.fromArray(node, elementType, mapper);
         }
         final List<T> out = new ArrayList<>();
         if (!(node instanceof ArrayNode)) {

@@ -353,7 +353,7 @@ list together with any read issues (e.g. a stray body id that disagreed with its
 
 A type can be **rich as a solo value/field but compact inside a list** — no wall of `{x,y,z}` objects for a
 long `List<Pos>`. Implement `EveryConfigElementString<T>` (which, unlike `EveryConfigString`, leaves the solo
-form untouched) and opt in per call — a plain `setValue` still writes the rich form:
+form untouched); then — exactly like `@KeyIndex` — `setValue`/`getList` **auto-detect** it for a collection:
 
 ```java
 class Pos implements EveryConfigElementString<Pos> {         // rich solo, compact in a list
@@ -362,13 +362,13 @@ class Pos implements EveryConfigElementString<Pos> {         // rich solo, compa
     public static Pos fromElementString(String s)   { /* parse "x y z" */ }
 }
 
-cfg.setValue("home", new Pos(1, 2, 3));                      // solo   -> { x, y, z }        (rich)
-cfg.setElementList("spots", spots);                          // list   -> ["4 5 6", "7 8 9"] (compact)
-List<Pos> back = cfg.getElementList("spots", Pos.class);     // tolerant: reads strings OR objects
+cfg.setValue("home", new Pos(1, 2, 3));                      // solo -> { x, y, z }        (rich)
+cfg.setValue("spots", spots);                                // list -> ["4 5 6", "7 8 9"] (compact, auto)
+List<Pos> back = cfg.getList("spots", Pos.class);            // tolerant: reads strings OR objects
 ```
 
-Nested `List<T>` fields inside a bound POJO stay rich for now — the compact form is on the dynamic
-`setElementList` / `getElementList` API, mirroring where `@KeyIndex` intercepts.
+Nested `List<T>` fields inside a bound POJO stay rich for now — the compact form is auto-detected on the
+dynamic `setValue` / `getList` path, the same place `@KeyIndex` intercepts.
 
 ---
 
