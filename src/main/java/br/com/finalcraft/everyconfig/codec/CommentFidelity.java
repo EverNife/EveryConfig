@@ -26,9 +26,7 @@ public enum CommentFidelity {
 
     /**
      * The format has no in-band comment syntax that round-trips (strict RFC JSON). Comment seeds and
-     * the comment overlay are ignored at write time. This says nothing about a ONE-WAY sidecar
-     * documentation projection, which never participates in a round-trip and so does not contradict
-     * NONE (see {@link Codec#writesSidecarDoc()}).
+     * the comment overlay are ignored at write time.
      */
     NONE
 }

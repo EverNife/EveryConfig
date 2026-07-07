@@ -24,30 +24,22 @@ public final class JsonCodec implements Codec {
     private static final ObjectMapper DEFAULT = ECMapperProfiles.strictJson(JsonMapper.builder().build());
 
     private final ObjectMapper mapper;
-    private final boolean sidecarDoc;
     private final CompactElementResolver compactResolver;
 
     public JsonCodec() {
         this.mapper = DEFAULT;
-        this.sidecarDoc = false;
         this.compactResolver = AnnotationCompactElementResolver.INSTANCE;
     }
 
     /** Uses an isolated copy of the user's mapper so a later external mutation cannot leak in. */
     public JsonCodec(final ObjectMapper userMapper) {
-        this(userMapper, false);
+        this(userMapper, null);
     }
 
-    public JsonCodec(final ObjectMapper userMapper, final boolean sidecarDoc) {
-        this(userMapper, sidecarDoc, null);
-    }
-
-    /** As {@link #JsonCodec(ObjectMapper, boolean)}, plus a consumer {@link CompactElementResolver} consulted
+    /** As {@link #JsonCodec(ObjectMapper)}, plus a consumer {@link CompactElementResolver} consulted
      *  AHEAD of the annotation resolver when classifying a collection's element for its compact form. */
-    public JsonCodec(final ObjectMapper userMapper, final boolean sidecarDoc,
-                     final CompactElementResolver compactResolver) {
+    public JsonCodec(final ObjectMapper userMapper, final CompactElementResolver compactResolver) {
         this.mapper = ECMapperProfiles.isolate(userMapper, () -> DEFAULT);
-        this.sidecarDoc = sidecarDoc;
         this.compactResolver = CompactElementResolver.compose(compactResolver, AnnotationCompactElementResolver.INSTANCE);
     }
 
@@ -64,11 +56,6 @@ public final class JsonCodec implements Codec {
     @Override
     public CommentFidelity commentFidelity() {
         return CommentFidelity.NONE;
-    }
-
-    @Override
-    public boolean writesSidecarDoc() {
-        return sidecarDoc;
     }
 
     @Override
