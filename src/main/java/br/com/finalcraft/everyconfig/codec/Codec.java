@@ -72,15 +72,6 @@ public interface Codec {
      */
     String writeTreePlain(JsonNode tree);
 
-    /**
-     * True when a {@code NONE}-fidelity codec emits a ONE-WAY sidecar documentation file. Default
-     * false. The doc is a projection of the binding schema's comments; it is NEVER read back, so it
-     * does not affect {@link #commentFidelity}.
-     */
-    default boolean writesSidecarDoc() {
-        return false;
-    }
-
     // ---- entity <-> tree (derived binding view) -------------------------
 
     /**
