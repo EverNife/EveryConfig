@@ -5,13 +5,23 @@ import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import java.util.List;
 
 /**
- * The single context handed to every lifecycle hook — both the {@code @PreLoad}/{@code @PostLoad}/
- * {@code @PreSave}/{@code @PostSave} methods and the {@link ConfigLifecycle} interface. It carries the
- * {@link ConfigSection} the entity is bound at (the gateway to siblings, the owning {@code Config} and the
- * raw tree via {@link ConfigSection#getConfig()}) and the {@link LoadIssue}s collected for the bind.
+ * The single context handed to every lifecycle hook — both the
+ * {@link br.com.finalcraft.everyconfig.annotation.PreLoad @PreLoad}/
+ * {@link br.com.finalcraft.everyconfig.annotation.PostLoad @PostLoad}/
+ * {@link br.com.finalcraft.everyconfig.annotation.PreSave @PreSave}/
+ * {@link br.com.finalcraft.everyconfig.annotation.PostSave @PostSave} methods and the {@link ConfigLifecycle}
+ * interface. It carries the {@link ConfigSection} the entity is bound at (the gateway to siblings, the owning
+ * {@code Config} and the raw tree via {@link ConfigSection#getConfig()}) and the {@link LoadIssue}s collected
+ * for the bind.
  *
  * <p>{@link #issues()} is populated only during {@code @PostLoad} — the one phase where a bind has produced
  * issues; it is an empty list for the pre-load and the save phases.
+ *
+ * @see ConfigLifecycle
+ * @see br.com.finalcraft.everyconfig.annotation.PreLoad
+ * @see br.com.finalcraft.everyconfig.annotation.PostLoad
+ * @see br.com.finalcraft.everyconfig.annotation.PreSave
+ * @see br.com.finalcraft.everyconfig.annotation.PostSave
  */
 public final class ConfigContext {
 

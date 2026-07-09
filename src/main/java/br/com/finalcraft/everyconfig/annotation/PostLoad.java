@@ -7,9 +7,18 @@ import java.lang.annotation.Target;
 
 /**
  * Marks a method to run right AFTER an entity is read (bound) from the tree. The method takes either no
- * parameters or a single {@code ConfigContext} parameter (whose {@code issues()} exposes load problems
- * to inspect or reject). Useful
- * for validation and derived-field computation. Overridden methods run once (de-duped by name).
+ * parameters or a single {@link br.com.finalcraft.everyconfig.binding.ConfigContext} parameter (whose
+ * {@link br.com.finalcraft.everyconfig.binding.ConfigContext#issues() issues()} exposes load problems to
+ * inspect or reject). Useful for validation and derived-field computation. Overridden methods run once
+ * (de-duped by name).
+ *
+ * <p>The method-level counterpart of {@link br.com.finalcraft.everyconfig.binding.ConfigLifecycle#postLoad}.
+ *
+ * @see br.com.finalcraft.everyconfig.binding.ConfigLifecycle
+ * @see br.com.finalcraft.everyconfig.binding.ConfigContext
+ * @see PreLoad
+ * @see PreSave
+ * @see PostSave
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
