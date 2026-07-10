@@ -190,6 +190,9 @@ cfg.getKeys("", true);             // deep, dotted descendant paths
 cfg.getConfigSection("a.b");        // a scoped view that delegates back with the sub-path prefixed
 
 cfg.migrateKey("old.name", "new.name"); // move a key (and its comments); returns a MigrationResult
+
+cfg.pinLast("Debug");               // keep the "Debug" section at the bottom, even as new keys are seeded
+cfg.pinFirst("meta");               // float a key to the top of its level; unpin("meta") clears it
 ```
 
 > **Keys that contain a dot:** `.` separates path segments, so a key that legitimately contains one is
@@ -199,6 +202,12 @@ cfg.migrateKey("old.name", "new.name"); // move a key (and its comments); return
 > **`migrateKey` is startup-safe and observable.** It returns a `MigrationResult` so a re-run that finds the
 > data already moved (`ALREADY_MIGRATED`) is told apart from a typo'd source that never existed
 > (`SOURCE_ABSENT`) — both no-ops, but only one is worth logging.
+
+> **Pinning key order.** `pinFirst`/`pinLast` keep a key at the top/bottom of its level on save (`unpin`
+> clears it), so a `Debug` section stays last even as `getOrSetValueIfAbsent` seeds new keys over time. It is
+> an in-memory ordering policy — re-assert it at startup, like `@Comment` — and best-effort per format:
+> YAML/JSONC honor it fully, TOML honors it within the scalar group and within the table group (never moving a
+> scalar past a table), and JSON's plain output keeps live-tree order.
 
 > **Legacy long-as-string tolerance:** the numeric getters parse a number stored as a quoted string, so a long
 > once written as `"1700000000000"` still reads back via `getLong`. `getUUID` is equally tolerant — a

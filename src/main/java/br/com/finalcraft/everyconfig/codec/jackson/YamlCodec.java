@@ -326,20 +326,12 @@ public final class YamlCodec implements Codec, CommentAware {
         return false;
     }
 
-    /** Captured key order first (for keys still present), then any live keys not in the snapshot. */
+    /** The emit order for this node: captured order, then appended keys, re-partitioned by pin zone —
+     *  centralized in {@link KeyOrder#arrange}. */
     private List<String> orderedFieldNames(final ObjectNode node, final String parentPath, final KeyOrder order) {
-        final Set<String> live = new LinkedHashSet<>();
+        final List<String> live = new ArrayList<>();
         node.fieldNames().forEachRemaining(live::add);
-        // Captured order first, then any live keys not yet placed. A LinkedHashSet keeps membership O(1):
-        // an ArrayList.contains here was O(n²) and dominated the save of a node with many keys.
-        final LinkedHashSet<String> result = new LinkedHashSet<>(Math.max(16, live.size() * 2));
-        for (final String k : order.orderedKeys(parentPath)) {
-            if (live.contains(k)) {
-                result.add(k);
-            }
-        }
-        result.addAll(live);
-        return new ArrayList<>(result);
+        return order.arrange(parentPath, live);
     }
 
     // ---- comment text parser (text pass, no mapper) --------------------
