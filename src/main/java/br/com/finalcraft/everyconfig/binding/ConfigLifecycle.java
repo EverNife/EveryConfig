@@ -13,6 +13,16 @@ package br.com.finalcraft.everyconfig.binding;
  * run around the merge into the tree (which precedes {@code Config.save}), and {@code preLoad}/{@code postLoad}
  * around the bind from the tree. All four default to no-ops, so an implementor overrides only what it needs.
  *
+ * <p><b>Nested composition.</b> The hooks fire wherever EveryConfig (de)serializes this type — not only as
+ * the top-level value bound to a path, but also as a nested POJO field, a {@code Map} value, or a
+ * {@code List}/{@code Set}/array element, at any depth. Each nested hook receives a {@link ConfigContext}
+ * whose {@link ConfigContext#section() section()} points at that value's real sub-path ({@code owner.field},
+ * {@code owner.<mapKey>}, {@code list[i]}, or the {@code @KeyIndex} section), so a nested {@code postSave}/
+ * {@code postLoad} can reach its own slice of the tree exactly as a top-level one can. Two exceptions:
+ * {@code preLoad} fires for the top-level value only (a nested instance does not exist before its own bind),
+ * and a type persisted as a compact list element ({@code @EveryConfigCompactValue}) has no sub-path, so its
+ * hooks do not compose there (EveryConfig logs a warning rather than silently skipping).
+ *
  * @see ConfigContext
  * @see br.com.finalcraft.everyconfig.annotation.PreLoad
  * @see br.com.finalcraft.everyconfig.annotation.PostLoad

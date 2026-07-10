@@ -12,6 +12,8 @@ import java.lang.annotation.Target;
  * parameter. Overridden methods run once.
  *
  * <p>The method-level counterpart of {@link br.com.finalcraft.everyconfig.binding.ConfigLifecycle#preLoad}.
+ * Unlike the other three phases, {@code @PreLoad} fires for the TOP-LEVEL value only: a nested entity does
+ * not exist before its own bind, so there is no pre-load moment for it.
  *
  * @see br.com.finalcraft.everyconfig.binding.ConfigLifecycle
  * @see br.com.finalcraft.everyconfig.binding.ConfigContext

@@ -1,4 +1,5 @@
 package br.com.finalcraft.everyconfig.binding;
+import br.com.finalcraft.everyconfig.binding.merge.LifecycleGraphWalker;
 import br.com.finalcraft.everyconfig.binding.merge.LifecycleInvoker;
 import br.com.finalcraft.everyconfig.binding.merge.SmartMerge;
 import br.com.finalcraft.everyconfig.binding.schema.BindingNames;
@@ -208,7 +209,21 @@ public final class EntityBinder<T> {
         LifecycleInvoker.fire(base, LifecycleInvoker.Phase.PRE_LOAD, section, Collections.<LoadIssue>emptyList());
         final T result = doBind(base, node);
         LifecycleInvoker.fire(result, LifecycleInvoker.Phase.POST_LOAD, section, lastIssues);
+        // Nested @PostLoad: the mapper bound the whole graph, so descendants (fields, Map values, collection
+        // elements) never fired. Walk the bound result and fire each hook-bearing node at its sub-path. No
+        // nested PRE_LOAD — a nested instance does not exist before its own bind.
+        if (shouldWalkGraph(result)) {
+            LifecycleGraphWalker.fireDescendants(config, result, section.getPath(),
+                    LifecycleInvoker.Phase.POST_LOAD, lastIssues);
+        }
         return result;
+    }
+
+    /** Whether the graph walk is worth running for a bound/serialized value: a container type may hold
+     *  hook-bearing elements the raw class does not reveal, and a concrete value is gated by its own class
+     *  (a flat, hook-free POJO skips the walk entirely). */
+    private boolean shouldWalkGraph(final Object value) {
+        return type.isContainerType() || (value != null && LifecycleGraphWalker.mayContainHooks(value.getClass()));
     }
 
     // ---- WRITE: POJO -> tree (merge, never replace; "" / null = the root) ----
@@ -221,7 +236,13 @@ public final class EntityBinder<T> {
      */
     public void write(final String path, final T pojo) {
         final ConfigSection section = config.getConfigSection(path == null ? "" : path);
+        final boolean walk = pojo != null && LifecycleGraphWalker.mayContainHooks(pojo.getClass());
         LifecycleInvoker.fire(pojo, LifecycleInvoker.Phase.PRE_SAVE, section, Collections.<LoadIssue>emptyList());
+        // Nested @PreSave BEFORE the projection, so a nested pre-save mutation is captured by valueToTree.
+        if (walk) {
+            LifecycleGraphWalker.fireDescendants(config, pojo, section.getPath(),
+                    LifecycleInvoker.Phase.PRE_SAVE, Collections.<LoadIssue>emptyList());
+        }
         final JsonNode existing = config.getNode(path);
         final ObjectNode target;
         if (existing instanceof ObjectNode) {
@@ -232,6 +253,12 @@ public final class EntityBinder<T> {
         }
         mergeAndSeed(pojo, target, path == null ? "" : path);
         LifecycleInvoker.fire(pojo, LifecycleInvoker.Phase.POST_SAVE, section, Collections.<LoadIssue>emptyList());
+        // Nested @PostSave AFTER the merge: the sub-path is now materialized, so a nested post-save that
+        // writes through context.section() lands where the entity actually is.
+        if (walk) {
+            LifecycleGraphWalker.fireDescendants(config, pojo, section.getPath(),
+                    LifecycleInvoker.Phase.POST_SAVE, Collections.<LoadIssue>emptyList());
+        }
     }
 
     /** As {@link #write(String, Object)}, scoped to a {@link ConfigSection}'s path. */

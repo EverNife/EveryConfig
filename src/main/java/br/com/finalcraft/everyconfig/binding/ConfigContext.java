@@ -33,7 +33,9 @@ public final class ConfigContext {
         this.issues = issues;
     }
 
-    /** The section the entity is bound at; reach the {@code Config} via {@link ConfigSection#getConfig()}. */
+    /** The section the entity is bound at; reach the {@code Config} via {@link ConfigSection#getConfig()}. For a
+     *  nested entity (a field, {@code Map} value, or collection element) this is its real sub-path, so the hook
+     *  reaches the same slice of the tree a top-level bind would. */
     public ConfigSection section() {
         return section;
     }

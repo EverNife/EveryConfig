@@ -425,6 +425,145 @@ public final class Dtos {
         }
     }
 
+    // ===================== nested lifecycle composition =====================
+
+    /**
+     * A {@link ConfigLifecycle} entity whose {@code postSave} writes an {@code extra} child through its own
+     * section and whose {@code postLoad} reads it back — the shape that only works if the hooks fire wherever
+     * the type is (de)serialized, nested included. {@code extra} is app data persisted manually (transient, so
+     * the mapper never emits it); {@code fires} records {@code "phase@path"} so a test can read the sub-path
+     * each hook was handed.
+     */
+    public static class HookedPojo implements ConfigLifecycle {
+        public String name = "";
+        public int value = 0;
+        public transient String extra;                                  // persisted manually to <section>.extra
+        public transient List<String> fires = new ArrayList<String>();
+
+        public HookedPojo() {
+        }
+
+        public HookedPojo(final String name, final int value, final String extra) {
+            this.name = name;
+            this.value = value;
+            this.extra = extra;
+        }
+
+        @Override
+        public void preLoad(final ConfigContext context) {
+            fires.add("preLoad@" + context.section().getPath());
+        }
+
+        @Override
+        public void postLoad(final ConfigContext context) {
+            fires.add("postLoad@" + context.section().getPath());
+            this.extra = context.section().getString("extra");
+        }
+
+        @Override
+        public void preSave(final ConfigContext context) {
+            fires.add("preSave@" + context.section().getPath());
+        }
+
+        @Override
+        public void postSave(final ConfigContext context) {
+            fires.add("postSave@" + context.section().getPath());
+            if (extra != null) {
+                context.section().setValue("extra", extra);
+            }
+        }
+    }
+
+    /** As {@link HookedPojo} but with a {@code @KeyIndex} id, so a collection of it serializes key-major and
+     *  each element's section is {@code base.<id>}. */
+    public static class HookedKeyedPojo implements ConfigLifecycle {
+        @KeyIndex
+        public String id = "";
+        public int value = 0;
+        public transient String extra;
+        public transient List<String> fires = new ArrayList<String>();
+
+        public HookedKeyedPojo() {
+        }
+
+        public HookedKeyedPojo(final String id, final int value, final String extra) {
+            this.id = id;
+            this.value = value;
+            this.extra = extra;
+        }
+
+        @Override
+        public void postLoad(final ConfigContext context) {
+            fires.add("postLoad@" + context.section().getPath());
+            this.extra = context.section().getString("extra");
+        }
+
+        @Override
+        public void postSave(final ConfigContext context) {
+            fires.add("postSave@" + context.section().getPath());
+            if (extra != null) {
+                context.section().setValue("extra", extra);
+            }
+        }
+    }
+
+    /** A top-level entity holding hook-bearing entities in every nested shape: a plain field, a {@code Map}
+     *  value, and a {@code List} element. Implements {@link ConfigLifecycle} itself so its own top-level
+     *  {@code preLoad}/{@code postLoad} fire — letting a test assert that {@code PRE_LOAD} does NOT propagate
+     *  to the nested entities. */
+    public static class HookedOwnerPojo implements ConfigLifecycle {
+        public String title = "owner";
+        public HookedPojo child;
+        public Map<String, HookedPojo> byName = new LinkedHashMap<String, HookedPojo>();
+        public List<HookedPojo> items = new ArrayList<HookedPojo>();
+        public transient List<String> fires = new ArrayList<String>();
+
+        @Override
+        public void preLoad(final ConfigContext context) {
+            fires.add("preLoad@" + context.section().getPath());
+        }
+
+        @Override
+        public void postLoad(final ConfigContext context) {
+            fires.add("postLoad@" + context.section().getPath());
+        }
+    }
+
+    /** A compact-element type that ALSO carries lifecycle hooks — the collision case: as a compact list
+     *  element it collapses to one string with no sub-path, so its hooks cannot compose (EveryConfig warns
+     *  rather than firing at a bogus section). {@code fires} must stay empty when it is used compactly. */
+    public static class CompactHookedPojo implements ConfigLifecycle {
+        public int n = 0;
+        public transient List<String> fires = new ArrayList<String>();
+
+        public CompactHookedPojo() {
+        }
+
+        public CompactHookedPojo(final int n) {
+            this.n = n;
+        }
+
+        @EveryConfigCompactValue
+        public String toElementString() {
+            return String.valueOf(n);
+        }
+
+        @EveryConfigCompactCreator
+        public static CompactHookedPojo fromElementString(final String s) {
+            return new CompactHookedPojo(Integer.parseInt(s.trim()));
+        }
+
+        @Override
+        public void postSave(final ConfigContext context) {
+            fires.add("postSave@" + context.section().getPath());
+        }
+
+        @Override
+        public void postLoad(final ConfigContext context) {
+            fires.add("postLoad@" + context.section().getPath());
+        }
+    }
+
     // ===================== polymorphism =====================
 
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
