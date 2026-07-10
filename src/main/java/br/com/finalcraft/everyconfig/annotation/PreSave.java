@@ -12,6 +12,8 @@ import java.lang.annotation.Target;
  * {@link br.com.finalcraft.everyconfig.binding.ConfigContext} parameter. Overridden methods run once.
  *
  * <p>The method-level counterpart of {@link br.com.finalcraft.everyconfig.binding.ConfigLifecycle#preSave}.
+ * Composes in nested position (a field, {@code Map} value, or collection element), with a section at the
+ * value's sub-path — see {@link br.com.finalcraft.everyconfig.binding.ConfigLifecycle} for the rules.
  *
  * @see br.com.finalcraft.everyconfig.binding.ConfigLifecycle
  * @see br.com.finalcraft.everyconfig.binding.ConfigContext

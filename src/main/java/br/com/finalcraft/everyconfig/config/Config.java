@@ -8,6 +8,8 @@ import br.com.finalcraft.everyconfig.binding.BindResult;
 import br.com.finalcraft.everyconfig.binding.EntityBinder;
 import br.com.finalcraft.everyconfig.binding.merge.ElementStringList;
 import br.com.finalcraft.everyconfig.binding.merge.KeyIndexer;
+import br.com.finalcraft.everyconfig.binding.merge.LifecycleGraphWalker;
+import br.com.finalcraft.everyconfig.binding.merge.LifecycleInvoker;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CommentAware;
@@ -244,11 +246,63 @@ public class Config implements AutoCloseable {
     }
 
     /**
+     * The write entry for {@link #setValue}/{@link #mergeValue}. A top-level {@code Collection}/{@code Map}
+     * of hook-bearing elements bypasses the binder (the keyindex/compact/raw paths serialize through the
+     * mapper), so its elements' lifecycle hooks would never fire — bracket the write with nested
+     * {@code PRE_SAVE}/{@code POST_SAVE}, each element sectioned at its real sub-path ({@code base[i]} /
+     * {@code base.<idValue>} / {@code base.<key>}). The compact-element form has no sub-path, so it only
+     * warns. A genuine POJO routes through the binder ({@link #overrideEntity}/{@link #mergeEntity}), which
+     * fires its own graph — so this bracketing is for the container-at-top case only.
+     */
+    private void writeValue(final String path, final Object value, final boolean merge) {
+        if (codec != null && value instanceof Collection) {
+            final Collection<?> coll = (Collection<?>) value;
+            if (!coll.isEmpty() && LifecycleGraphWalker.anyMayHaveHooks(coll)) {
+                if (isCompactElementCollection(coll)) {
+                    LifecycleGraphWalker.warnCompactHooks(firstElementType(coll));
+                    writeValueImpl(path, value, merge);
+                    return;
+                }
+                final String base = path == null ? "" : path;
+                final boolean keyed = isKeyIndexedCollection(coll);
+                LifecycleGraphWalker.fireCollectionElements(this, base, coll, keyed,
+                        LifecycleInvoker.Phase.PRE_SAVE, Collections.<LoadIssue>emptyList());
+                writeValueImpl(path, value, merge);
+                LifecycleGraphWalker.fireCollectionElements(this, base, coll, keyed,
+                        LifecycleInvoker.Phase.POST_SAVE, Collections.<LoadIssue>emptyList());
+                return;
+            }
+        } else if (codec != null && value instanceof Map) {
+            final Map<?, ?> map = (Map<?, ?>) value;
+            if (!map.isEmpty() && LifecycleGraphWalker.anyMayHaveHooks(map.values())) {
+                final String base = path == null ? "" : path;
+                LifecycleGraphWalker.fireMapValues(this, base, map,
+                        LifecycleInvoker.Phase.PRE_SAVE, Collections.<LoadIssue>emptyList());
+                writeValueImpl(path, value, merge);
+                LifecycleGraphWalker.fireMapValues(this, base, map,
+                        LifecycleInvoker.Phase.POST_SAVE, Collections.<LoadIssue>emptyList());
+                return;
+            }
+        }
+        writeValueImpl(path, value, merge);
+    }
+
+    /** The first non-null element's runtime class, or null for an all-null collection. */
+    private static Class<?> firstElementType(final Collection<?> collection) {
+        for (final Object e : collection) {
+            if (e != null) {
+                return e.getClass();
+            }
+        }
+        return null;
+    }
+
+    /**
      * The shared write body for {@link #setValue}/{@link #mergeValue}: identical for every value except a
      * genuine POJO, where {@code merge} chooses between a merge into the existing subtree and an override
      * that replaces it.
      */
-    private void writeValue(final String path, final Object value, final boolean merge) {
+    private void writeValueImpl(final String path, final Object value, final boolean merge) {
         final boolean root = DPath.isRoot(path);
         if (value == null) {
             if (root) {
@@ -668,7 +722,9 @@ public class Config implements AutoCloseable {
         final ObjectMapper mapper = codec.getObjectMapper();
         if (node instanceof ObjectNode && KeyIndexer.isKeyIndexed(elementType)) {
             final List<LoadIssue> sink = issues != null ? issues : new ArrayList<LoadIssue>();
-            return KeyIndexer.fromIndexed(node, elementType, mapper, sink);
+            final List<T> keyed = KeyIndexer.fromIndexed(node, elementType, mapper, sink);
+            firePostLoadElements(path, keyed, true, sink);
+            return keyed;
         }
         // A type with a compact element form is read tolerantly: a textual element via its compact codec, an
         // object element via the normal rich bind (so a list mixing both shapes still reads).
@@ -676,6 +732,7 @@ public class Config implements AutoCloseable {
         final CompactElementCodec<T> compact =
                 (CompactElementCodec<T>) codec.compactElementResolver().resolve(elementType);
         if (compact != null) {
+            LifecycleGraphWalker.warnCompactHooks(elementType); // a compact element has no sub-path for its hooks
             return ElementStringList.fromArray(node, elementType, mapper, compact);
         }
         final List<T> out = new ArrayList<>();
@@ -689,7 +746,22 @@ public class Config implements AutoCloseable {
                 // lenient: skip an element that cannot be bound to elementType
             }
         }
+        firePostLoadElements(path, out, false, issues != null ? issues : Collections.<LoadIssue>emptyList());
         return out;
+    }
+
+    /**
+     * Fire nested {@code @PostLoad} for the elements of a list just read (each at {@code path[i]} for a plain
+     * list, or {@code path.<idValue>} for a {@code @KeyIndex} list), plus each element's descendants — the
+     * hooks the per-element {@code mapper.convertValue} bypassed. A no-op unless some element actually carries
+     * hooks, so a scalar list pays nothing.
+     */
+    private void firePostLoadElements(final String path, final List<?> elements, final boolean keyIndexed,
+                                      final List<LoadIssue> issues) {
+        if (codec != null && !elements.isEmpty() && LifecycleGraphWalker.anyMayHaveHooks(elements)) {
+            LifecycleGraphWalker.fireCollectionElements(this, path == null ? "" : path, elements, keyIndexed,
+                    LifecycleInvoker.Phase.POST_LOAD, issues);
+        }
     }
 
     /** The UUID at {@code path}, or null when absent or malformed — tolerant like the numeric getters

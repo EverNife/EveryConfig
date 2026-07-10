@@ -69,6 +69,24 @@ public final class LifecycleInvoker {
     }
 
     /**
+     * Whether {@code type} carries any lifecycle hook at all — it implements {@link ConfigLifecycle} or
+     * declares at least one {@code @PreLoad}/{@code @PostLoad}/{@code @PreSave}/{@code @PostSave} method
+     * anywhere in its hierarchy. The signal the graph walk uses to decide an instance is worth firing;
+     * backed by the same per-class cache as {@link #fire}.
+     */
+    public static boolean hasHooks(final Class<?> type) {
+        if (ConfigLifecycle.class.isAssignableFrom(type)) {
+            return true;
+        }
+        for (final List<Method> methods : hooksOf(type).values()) {
+            if (!methods.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Collect the hook methods per phase for {@code type}: walk the hierarchy subclass-first and, within
      * each phase, keep the first method seen per name so an overridden hook runs once (the most-derived
      * override). Signatures are validated at invoke time, as before, so a bad {@code @PreSave} surfaces
