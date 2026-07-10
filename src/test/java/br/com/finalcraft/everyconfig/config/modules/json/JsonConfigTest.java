@@ -34,6 +34,13 @@ class JsonConfigTest extends AbstractConfigTest {
         return "{ \"a\": ";
     }
 
+    /** JSON is emitted by the mapper's plain writer, not a structure emitter, so key-ordering pins are not
+     *  honored (the output follows live-tree order). */
+    @Override
+    protected boolean supportsKeyOrdering() {
+        return false;
+    }
+
     @Test
     @Order(320)
     @DisplayName("[json] the emitted layout matches the golden fixture byte-for-byte (no comments)")

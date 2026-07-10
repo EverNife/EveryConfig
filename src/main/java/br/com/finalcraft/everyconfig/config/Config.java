@@ -43,6 +43,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -85,6 +86,11 @@ public class Config implements AutoCloseable {
     // only default-seeding, so a caller can tell "I completed an old file with new keys" apart from "a
     // value was edited". (Not serialized state — a Config is never serialized.)
     private boolean newSeededDefaults = false;
+
+    // In-memory ordering policy: pin directives keyed by full dotted path (last write wins). Re-applied onto
+    // the captured KeyOrder at every save (see encodeWith) so a key stays FIRST/LAST regardless of later
+    // seeding; never written to the file. Populated by pinFirst/pinLast/unpin.
+    private final Map<String, KeyOrder.Zone> pins = new LinkedHashMap<>();
 
     public Config() {
         this(JsonNodeFactory.instance.objectNode(), new CommentTree(), KeyOrder.empty());
@@ -923,6 +929,71 @@ public class Config implements AutoCloseable {
         return MigrationResult.MOVED;
     }
 
+    // ==================== key ordering (pin) ====================
+
+    /** Pins {@code path} to the {@link KeyOrder.Zone#FIRST} zone — it floats above its siblings on save. */
+    public Config pinFirst(final String path) {
+        return pin(path, KeyOrder.Zone.FIRST);
+    }
+
+    /** Pins {@code path} to the {@link KeyOrder.Zone#LAST} zone — it sinks below its siblings on save, so it
+     *  stays at the bottom even as new keys are seeded later (the "keep Debug last" case). */
+    public Config pinLast(final String path) {
+        return pin(path, KeyOrder.Zone.LAST);
+    }
+
+    /**
+     * Pins {@code path} to an emit {@link KeyOrder.Zone}: {@code FIRST} floats it above its siblings,
+     * {@code LAST} sinks it below them, {@code NORMAL} (or {@code null}) clears the pin (like {@link #unpin}).
+     *
+     * <p>A pin is an in-memory ordering POLICY, not file data: it is re-asserted on every save and survives a
+     * {@link #reload()}, but nothing is written to mark it — so re-assert it on a fresh process (e.g. at
+     * startup), the same way {@code @Comment}/{@code getOrSetValueIfAbsent} are re-run. A pin on a key that
+     * does not exist yet stays latent until the key appears. Effect is per-key at its own level: {@code path}
+     * is a full dotted path, so {@code pinLast("a.b")} sinks {@code b} within {@code a} only.
+     *
+     * <p>Best-effort per codec: YAML and JSONC honor it fully; TOML honors it within the scalar group and
+     * within the table group but never moves a scalar past a table (TOML emits bare keys before
+     * {@code [table]}s); JSON has no structure emitter, so its plain output keeps live-tree order. Returns
+     * {@code this} for chaining.
+     */
+    public Config pin(final String path, final KeyOrder.Zone zone) {
+        if (DPath.isRoot(path)) {
+            throw new IllegalArgumentException("cannot pin the root");
+        }
+        if (zone == null || zone == KeyOrder.Zone.NORMAL) {
+            return unpin(path);
+        }
+        pins.put(path, zone);
+        dirty = true;
+        return this;
+    }
+
+    /** Clears any pin on {@code path}, so it returns to the captured/append order. Returns {@code this}. */
+    public Config unpin(final String path) {
+        if (DPath.isRoot(path)) {
+            throw new IllegalArgumentException("cannot unpin the root");
+        }
+        if (pins.remove(path) != null) {
+            dirty = true;
+        }
+        return this;
+    }
+
+    /** The captured order with the live pin directives re-applied — the order actually handed to the emitter.
+     *  Pins live apart from the captured snapshot so a reload (which recaptures it) keeps them. */
+    private KeyOrder effectiveKeyOrder() {
+        if (pins.isEmpty()) {
+            return fileKeyOrder;
+        }
+        KeyOrder order = fileKeyOrder;
+        for (final Map.Entry<String, KeyOrder.Zone> e : pins.entrySet()) {
+            final String path = e.getKey();
+            order = order.withPin(DPath.parent(path), DPath.leaf(path), e.getValue());
+        }
+        return order;
+    }
+
     // ==================== getOrSetValueIfAbsent (the seeding engine) ====================
 
     /**
@@ -1353,7 +1424,7 @@ public class Config implements AutoCloseable {
         final CommentTree commentsSnapshot = comments.copy();
         final String text;
         if (codec instanceof CommentAware && codec.commentFidelity() != CommentFidelity.NONE) {
-            text = ((CommentAware) codec).writeWithComments(treeSnapshot, commentsSnapshot, fileKeyOrder);
+            text = ((CommentAware) codec).writeWithComments(treeSnapshot, commentsSnapshot, effectiveKeyOrder());
         } else {
             text = codec.writeTreePlain(treeSnapshot);
         }
