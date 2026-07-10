@@ -5,13 +5,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * An immutable snapshot of each object's key order as it was read from the file, keyed by dotted path, plus
@@ -117,14 +117,14 @@ public final class KeyOrder {
     }
 
     /**
-     * The final emit order for an object at {@code parentPath} given its {@code liveKeys}: the captured order
-     * first (for keys still present), then any live keys not in the snapshot — then re-partitioned by pin
-     * zone so {@link Zone#FIRST} keys lead and {@link Zone#LAST} keys trail, each preserving that base order.
-     * With no pins at this path it is exactly the historical "captured, then appended" behavior.
+     * The final emit order for an object at {@code parentPath} given its {@code live} keys (an insertion-order
+     * set the caller already holds, used as-is for O(1) membership): the captured order first (for keys still
+     * present), then any live keys not in the snapshot — then re-partitioned by pin zone so {@link Zone#FIRST}
+     * keys lead and {@link Zone#LAST} keys trail, each preserving that base order. With no pins at this path
+     * it is exactly the historical "captured, then appended" behavior.
      */
-    public List<String> arrange(final String parentPath, final Collection<String> liveKeys) {
+    public List<String> arrange(final String parentPath, final Set<String> live) {
         final String pp = parentPath == null ? "" : parentPath;
-        final LinkedHashSet<String> live = new LinkedHashSet<>(liveKeys);
         // Base: captured order (filtered by live), then any remaining live key. A LinkedHashSet keeps
         // membership O(1): an ArrayList.contains here was O(n^2) and dominated the save of a wide node.
         final LinkedHashSet<String> base = new LinkedHashSet<>(Math.max(16, live.size() * 2));

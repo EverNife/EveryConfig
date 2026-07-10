@@ -268,7 +268,7 @@ public final class TomlCodec implements Codec, CommentAware {
      *  applies on top, so a pin reorders WITHIN the scalar group and WITHIN the table group but never moves a
      *  scalar past a table (TOML emits bare keys before {@code [table]}s). */
     private List<String> orderedFieldNames(final ObjectNode node, final String parentPath, final KeyOrder order) {
-        final List<String> live = new ArrayList<>();
+        final Set<String> live = new LinkedHashSet<>();
         node.fieldNames().forEachRemaining(live::add);
         return order.arrange(parentPath, live);
     }
