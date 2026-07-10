@@ -329,7 +329,7 @@ public final class YamlCodec implements Codec, CommentAware {
     /** The emit order for this node: captured order, then appended keys, re-partitioned by pin zone —
      *  centralized in {@link KeyOrder#arrange}. */
     private List<String> orderedFieldNames(final ObjectNode node, final String parentPath, final KeyOrder order) {
-        final List<String> live = new ArrayList<>();
+        final Set<String> live = new LinkedHashSet<>();
         node.fieldNames().forEachRemaining(live::add);
         return order.arrange(parentPath, live);
     }
