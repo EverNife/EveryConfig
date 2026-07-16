@@ -50,6 +50,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.locks.ReentrantLock;
@@ -712,9 +713,10 @@ public class Config implements AutoCloseable {
     /**
      * Read the list at {@code path}. When {@code elementType} carries {@code @KeyIndex} AND the stored node is
      * an object, it is read as a key-major section (the section key is the id authority); otherwise it is read
-     * as a plain array. Lenient: an unbindable array element is skipped, and an indexed element whose body id
-     * disagrees with its section key is reconciled to the key. {@code issues}, when non-null, collects the
-     * indexed-read reconciliations.
+     * as an array, with a read-only tolerance for the legacy numeric-keyed object shape (see
+     * {@link #listElements}). Lenient: an unbindable array element is skipped, and an indexed element whose
+     * body id disagrees with its section key is reconciled to the key. {@code issues}, when non-null, collects
+     * the indexed-read reconciliations.
      */
     private <T> List<T> readList(final String path, final Class<T> elementType, final Codec codec,
                                 final List<LoadIssue> issues) {
@@ -736,10 +738,11 @@ public class Config implements AutoCloseable {
             return ElementStringList.fromArray(node, elementType, mapper, compact);
         }
         final List<T> out = new ArrayList<>();
-        if (!(node instanceof ArrayNode)) {
+        final List<JsonNode> elements = listElements(node);
+        if (elements == null) {
             return out;
         }
-        for (final JsonNode element : node) {
+        for (final JsonNode element : elements) {
             try {
                 out.add(mapper.convertValue(element, elementType));
             } catch (final IllegalArgumentException badElement) {
@@ -748,6 +751,58 @@ public class Config implements AutoCloseable {
         }
         firePostLoadElements(path, out, false, issues != null ? issues : Collections.<LoadIssue>emptyList());
         return out;
+    }
+
+    /**
+     * The elements to read as a list from {@code node}: the items of an array, or — for backward
+     * compatibility with the old FinalConfig storage, which persisted a list as an object keyed by
+     * throwaway numeric indexes ('0','1','2',...) rather than a real sequence — that object's values in
+     * index order. Read-only tolerance: {@code save()} always re-emits the modern array form, so a loaded
+     * legacy list is migrated on the next write. Returns null when {@code node} is neither shape, so the
+     * caller yields an empty list. The gate is all-numeric keys, which a genuine {@code Map}/POJO never has,
+     * so nothing but the legacy layout is reinterpreted; {@code @KeyIndex} lists are handled earlier and
+     * never reach here.
+     */
+    private static List<JsonNode> listElements(final JsonNode node) {
+        if (node instanceof ArrayNode) {
+            final List<JsonNode> items = new ArrayList<>();
+            for (final JsonNode element : node) {
+                items.add(element);
+            }
+            return items;
+        }
+        if (node instanceof ObjectNode && node.size() > 0) {
+            final TreeMap<Integer, JsonNode> byIndex = new TreeMap<>();
+            final Iterator<Map.Entry<String, JsonNode>> it = ((ObjectNode) node).fields();
+            while (it.hasNext()) {
+                final Map.Entry<String, JsonNode> field = it.next();
+                final Integer index = asIndexKey(field.getKey());
+                if (index == null) {
+                    return null; // a non-numeric key means this is not a legacy indexed list
+                }
+                byIndex.put(index, field.getValue());
+            }
+            return new ArrayList<>(byIndex.values());
+        }
+        return null;
+    }
+
+    /** A non-negative decimal index key ('0','1',...) as an int, or null when the key is not one. */
+    private static Integer asIndexKey(final String key) {
+        if (key.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < key.length(); i++) {
+            final char ch = key.charAt(i);
+            if (ch < '0' || ch > '9') {
+                return null;
+            }
+        }
+        try {
+            return Integer.valueOf(key);
+        } catch (final NumberFormatException tooManyDigits) {
+            return null; // an absurdly long digit run is not a real list index
+        }
     }
 
     /**
