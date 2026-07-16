@@ -5,6 +5,7 @@ import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.config.Config;
 import br.com.finalcraft.everyconfig.config.MigrationResult;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
+import br.com.finalcraft.everyconfig.core.tree.DPath;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.List;
@@ -42,17 +43,17 @@ public class ConfigSection {
         return path;
     }
 
-    /** The leaf key of this section's path (its last segment). */
+    /**
+     * The leaf key of this section's path, as the LITERAL key: a separator inside it was escaped on the
+     * way in, so it is unescaped on the way out and the key comes back whole.
+     */
     public String getSectionKey() {
-        final char sep = config.pathSeparator();
-        final int i = path.lastIndexOf(sep);
-        return i < 0 ? path : path.substring(i + 1);
+        return DPath.leaf(path);
     }
 
+    /** This section's parent, cutting at the last UNescaped separator so an escaped one stays a key. */
     public ConfigSection getParentSection() {
-        final char sep = config.pathSeparator();
-        final int i = path.lastIndexOf(sep);
-        return new ConfigSection(config, i < 0 ? "" : path.substring(0, i));
+        return new ConfigSection(config, DPath.parent(path));
     }
 
     /** Absolute path for a sub-path within this section. */
