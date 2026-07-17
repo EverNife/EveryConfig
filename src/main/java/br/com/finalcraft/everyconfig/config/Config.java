@@ -1610,6 +1610,20 @@ public class Config implements AutoCloseable {
         }
     }
 
+    /**
+     * Saves and then clears the seeded-defaults latch iff the file's shape evolved since the last
+     * {@link #clearNewSeededDefaults()} — i.e. {@link #hasNewSeededDefaults()} holds (new keys/comments were
+     * seeded); a no-op otherwise. The seeded-defaults counterpart of {@link #saveIfDirty()}: persist a config
+     * just completed with new defaults and reset the latch in one call, so a later check does not re-save an
+     * already-persisted tree. Clearing follows the save, so a failed save keeps the latch set.
+     */
+    public void saveIfNewSeededDefaults() {
+        if (newSeededDefaults) {
+            save();
+            clearNewSeededDefaults();
+        }
+    }
+
     /** Fire-and-forget save on the shared async executor (virtual threads on Java 21+, a daemon pool below). */
     public CompletableFuture<Void> saveAsync() {
         return CompletableFuture.runAsync(this::save, ConfigExecutors.get());
