@@ -282,7 +282,8 @@ DbConfig db = cfg.loadAs(DbConfig.class, codec);    // lenient by default
   its real default; `STRICT` throws a `BindException` on the first mismatch. Use `loadAsResult(...)` (or the
   binder's `readResult(...)`) to get a `BindResult<T>` carrying the value **and** the issues together.
 - **Annotations:** `@Key` (rename + case, or class-wide via `@JsonNaming(KeyCaseStrategy.Kebab.class)`),
-  `@Comment` (+ `CommentMode`), `@Section` (nested placement, on top-level **or nested-POJO** fields),
+  `@Comment` (+ `CommentMode`; seeded on top-level **and nested-POJO** fields, at the sub-path where the value
+  lands), `@Section` (nested placement, on top-level **or nested-POJO** fields),
   `@KeyIndex` (collection indexing). Native Jackson annotations keep working too.
 - **Lifecycle hooks:** `@PreLoad`/`@PostLoad`/`@PreSave`/`@PostSave` methods (no-arg or a single `ConfigContext`)
   fire around the binder's read/write; the opt-in `ConfigLifecycle` interface offers the same four. Each gets

@@ -243,6 +243,49 @@ public final class Dtos {
         public int poolSize = 5; // -> db.poolSize, with the comment at that nested path
     }
 
+    /** Top-level POJO whose nested-POJO sections carry {@code @Comment} on their leaves — the shape that
+     *  exercises recursive comment seeding. {@code triggers.onJoin} is SET_IF_ABSENT (mode-in-depth);
+     *  {@code triggers.onLeave} has no comment (no spurious seeding); {@code retention.maxPerTrigger} is
+     *  {@code @Section}-relocated, so its comment must land at the relocated nested path. */
+    public static class NestedCommentedPojo {
+        public Triggers triggers = new Triggers();
+        public Retention retention = new Retention();
+
+        public static class Triggers {
+            @Comment("Snapshot on death.")
+            public boolean onDeath = true;
+            @Comment(value = "Snapshot on join.", mode = CommentMode.SET_IF_ABSENT)
+            public boolean onJoin = true;
+            public boolean onLeave = false; // no @Comment -> no comment seeded
+        }
+
+        public static class Retention {
+            @Section("policy")
+            @Comment("Snapshots kept per trigger.")
+            public int maxPerTrigger = 0; // -> retention.policy.maxPerTrigger, comment at that path
+        }
+    }
+
+    /** The same nested-POJO type under two sibling fields: recursive seeding must comment BOTH branches (the
+     *  cycle guard is class-on-path, so a diamond is not pruned). */
+    public static class DiamondCommentedPojo {
+        public Leaf left = new Leaf();
+        public Leaf right = new Leaf();
+
+        public static class Leaf {
+            @Comment("A leaf value.")
+            public int value = 1;
+        }
+    }
+
+    /** A self-referential POJO: recursive comment seeding must terminate at the type's first recurrence
+     *  rather than loop forever. */
+    public static class SelfRefCommentedPojo {
+        @Comment("The node label.")
+        public String label = "root";
+        public SelfRefCommentedPojo next = null;
+    }
+
     // ----- @KeyIndex collection elements -----
 
     /** String {@code @KeyIndex}. */

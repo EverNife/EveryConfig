@@ -355,42 +355,72 @@ public final class EntityBinder<T> {
     }
 
     /**
-     * Seed comments declared by {@code @Comment} on the entity's fields (and the file header from a
-     * class-level {@code @Comment}) into the comment overlay, writing each only where no comment exists
-     * yet. A no-op when the codec cannot round-trip comments at all.
+     * Seed comments declared by {@code @Comment} on the entity's fields into the comment overlay, recursing
+     * into nested-POJO fields so a {@code @Comment} on a nested section's field lands at the exact sub-path
+     * where that field's value is written. A class-level {@code @Comment} seeds the file header, but only for
+     * the TOP type ({@code basePath} empty) — a nested type's class comment never becomes the header. Each
+     * comment is written per its {@link CommentMode} (OVERRIDE re-stamps, SET_IF_ABSENT yields to an existing
+     * one) at any depth. A no-op when the codec cannot round-trip comments at all.
      */
     private void seedCommentsFromAnnotations(final Class<?> clazz, final String basePath) {
         if (codec.commentFidelity() == CommentFidelity.NONE) {
             return;
         }
-        final CommentTree comments = config.getCommentTree();
         final Comment classComment = clazz.getAnnotation(Comment.class);
-        if (classComment != null && basePath.isEmpty()
-                && (classComment.mode() == CommentMode.OVERRIDE || comments.getHeader().isEmpty())) {
-            comments.setHeader(Arrays.asList(classComment.value()));
-        }
-        for (final Field f : BindingNames.allFields(clazz)) {
-            final Comment c = f.getAnnotation(Comment.class);
-            if (c == null) {
-                continue;
+        if (classComment != null && basePath.isEmpty()) {
+            final CommentTree comments = config.getCommentTree();
+            if (classComment.mode() == CommentMode.OVERRIDE || comments.getHeader().isEmpty()) {
+                comments.setHeader(Arrays.asList(classComment.value()));
             }
-            final String key = BindingNames.keyFor(f);
+        }
+        seedFieldComments(clazz, basePath, new HashSet<Class<?>>());
+    }
+
+    /**
+     * Seed each field's {@code @Comment} at its sub-path under {@code basePath}, then recurse into every
+     * nested-POJO field's TYPE. The descent mirrors the value-write traversal ({@link #collectSectionFields}):
+     * it enters only {@link TypeFamily#isUserPojoType} fields (never a {@code Map}/{@code Collection}/array/JDK
+     * type) and does NOT descend into a {@code @Section} field (its whole value relocates as a unit), so a
+     * seeded comment can never diverge from where its value lands. {@code onPath} guards cycles: a class is
+     * added on entry and removed on exit, so a self-referential type stops recursing at its first recurrence
+     * while a diamond (the same type under two sibling fields) is still seeded on both branches. The descent
+     * uses the DECLARED field type, so a runtime subtype's own {@code @Comment}s are not seeded.
+     */
+    private void seedFieldComments(final Class<?> clazz, final String basePath, final Set<Class<?>> onPath) {
+        final CommentTree comments = config.getCommentTree();
+        for (final Field f : BindingNames.allFields(clazz)) {
             final Section sec = f.getAnnotation(Section.class);
-            String fieldPath = "";
-            if (sec != null && !sec.value().isEmpty()) {
-                for (final String seg : DPath.split(sec.value())) { // @Section spells nesting with '.'
-                    fieldPath = DPath.joinSegment(fieldPath, seg);
+            final String fieldPath = sectionAwarePath(basePath, sec, BindingNames.keyFor(f));
+            final Comment c = f.getAnnotation(Comment.class);
+            if (c != null) {
+                final String text = String.join("\n", c.value());
+                if (c.mode() == CommentMode.OVERRIDE) {
+                    comments.setComment(fieldPath, text, CommentType.BLOCK); // documentation stays current
+                } else {
+                    comments.setDefaultComment(fieldPath, text, CommentType.BLOCK); // user-edited comment wins
                 }
             }
-            fieldPath = DPath.joinSegment(fieldPath, key); // a dot inside the key stays escaped in the path
-            final String path = basePath.isEmpty() ? fieldPath : DPath.join(basePath, fieldPath);
-            final String text = String.join("\n", c.value());
-            if (c.mode() == CommentMode.OVERRIDE) {
-                comments.setComment(path, text, CommentType.BLOCK); // documentation stays current
-            } else {
-                comments.setDefaultComment(path, text, CommentType.BLOCK); // user-edited comment wins
+            if (sec != null && !sec.value().isEmpty()) {
+                continue; // a @Section field's value relocates whole; its type is not descended
+            }
+            if (TypeFamily.isUserPojoType(f.getType()) && onPath.add(f.getType())) {
+                seedFieldComments(f.getType(), fieldPath, onPath);
+                onPath.remove(f.getType());
             }
         }
+    }
+
+    /** The path where field {@code key}'s value/comment lands under {@code basePath}, honoring a
+     *  {@code @Section} spine (dotted) ahead of the key — the same grammar the value write uses to relocate. */
+    private static String sectionAwarePath(final String basePath, final Section sec, final String key) {
+        String fieldPath = "";
+        if (sec != null && !sec.value().isEmpty()) {
+            for (final String seg : DPath.split(sec.value())) { // @Section spells nesting with '.'
+                fieldPath = DPath.joinSegment(fieldPath, seg);
+            }
+        }
+        fieldPath = DPath.joinSegment(fieldPath, key); // a dot inside the key stays escaped in the path
+        return basePath.isEmpty() ? fieldPath : DPath.join(basePath, fieldPath);
     }
 
     private T doBind(final T base, final JsonNode rawSource) {
