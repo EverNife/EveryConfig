@@ -286,6 +286,32 @@ public final class Dtos {
         public SelfRefCommentedPojo next = null;
     }
 
+    /** A spacing directive (empty lines opening the text) on a NESTED field: the blank lines must land at
+     *  the field's own sub-path, not at the root. */
+    public static class SpacingDirectivePojo {
+        public Section section = new Section();
+
+        public static class Section {
+            public int first = 1;
+            @Comment({"", "", "Two blank lines float above this one."})
+            public int second = 2;
+        }
+    }
+
+    /** An OVERRIDE comment (the default mode) with NO directive: rewriting it must leave the spacing the
+     *  file already carries untouched. */
+    public static class OverrideCommentPojo {
+        @Comment("Documented.")
+        public int alpha = 1;
+    }
+
+    /** The mirror of {@link OverrideCommentPojo}: an OVERRIDE comment WITH a directive, so the author owns
+     *  the spacing and rewrites it on every save — even down from a wider one. */
+    public static class OverrideDirectivePojo {
+        @Comment({"", "Documented."})
+        public int alpha = 1;
+    }
+
     // ----- @KeyIndex collection elements -----
 
     /** String {@code @KeyIndex}. */

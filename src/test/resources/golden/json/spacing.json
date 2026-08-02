@@ -1,0 +1,20 @@
+{
+  "Settings" : {
+    "disablePaymentIfRiding" : false,
+    "disablePaymentIfCreative" : false
+  },
+  "Multipliers" : {
+    "money" : 2,
+    "exp" : 3
+  },
+  "DebugMode" : {
+    "enabled" : true,
+    "modules" : {
+      "materialInterpreter" : true,
+      "preAction" : false
+    }
+  },
+  "Restrictions" : {
+    "blacklist" : [ "THE_AXE", "SOME_OTHER_ITEM" ]
+  }
+}

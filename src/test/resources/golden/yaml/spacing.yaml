@@ -1,0 +1,38 @@
+# EveryConfig spacing fixture
+# locks the emitted vertical layout
+
+# Core toggles.
+Settings:
+  disablePaymentIfRiding: false
+  disablePaymentIfCreative: false
+Multipliers:
+  money: 2
+  exp: 3
+
+
+
+# Debug system.
+# Only for troubleshooting.
+DebugMode:
+  # Log debug messages on the console.
+  enabled: true
+
+
+  # Enabled debug modules.
+  modules:
+    materialInterpreter: true
+    preAction: false
+
+
+
+
+# Restrictions.
+# Heavy-handed; read the wiki first.
+Restrictions:
+  blacklist:
+    # the axe that broke everything
+    - THE_AXE
+
+    - SOME_OTHER_ITEM
+
+# end of fixture

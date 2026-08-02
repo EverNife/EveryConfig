@@ -41,6 +41,11 @@ class TomlConfigTest extends AbstractConfigTest {
     }
 
     @Override
+    protected String cushionedFixture() {
+        return "#\n# Section two\n#\nkey = 1\n";
+    }
+
+    @Override
     protected boolean supportsNull() {
         // TOML has no null type: a null-valued key is omitted on write, so it reads back absent (the
         // collapse rule pinned by tomlNull_collapsesToAbsenceOnDisk). The abstract null tests assert the

@@ -43,6 +43,11 @@ class JsoncConfigTest extends AbstractConfigTest {
         return true; // a scalar list renders multi-line so each element's comment has an addressable home
     }
 
+    @Override
+    protected String commentMarker() {
+        return "//";
+    }
+
     @Test
     @Order(310)
     @DisplayName("[jsonc] a per-element comment is emitted immediately above its list item")

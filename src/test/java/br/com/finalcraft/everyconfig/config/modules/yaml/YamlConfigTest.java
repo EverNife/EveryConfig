@@ -46,6 +46,11 @@ class YamlConfigTest extends AbstractConfigTest {
         return "a: [1, 2\nb: : :";
     }
 
+    @Override
+    protected String cushionedFixture() {
+        return "#\n# Section two\n#\nkey: 1\n";
+    }
+
     @Test
     @Order(300)
     @DisplayName("[yaml] a per-element comment is emitted immediately above its list item")
