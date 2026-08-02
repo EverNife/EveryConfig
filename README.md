@@ -49,7 +49,9 @@ state is a Jackson `ObjectNode` tree that every format reads into and writes out
 - **🌳 One tree, many formats.** The canonical state is a Jackson `ObjectNode`. A pluggable `Codec` turns text
   ⇄ tree; swap `new YamlCodec()` for `new TomlCodec()` and the rest of your code is untouched.
 - **💬 Comments survive.** A format-agnostic comment overlay round-trips block, side, header and footer
-  comments — through YAML, TOML and JSONC. JSON declares no comment fidelity and never pretends to.
+  comments — through YAML, TOML and JSONC. JSON declares no comment fidelity and never pretends to. The
+  vertical layout survives too, and you can shape it: `withBlankLineBeforeComments(1)` breathes a documented
+  file into paragraphs, and a `\n` opening a comment asks for blank lines at that one path.
 - **🧩 Typed binding — override or merge, your call.** Bind the tree to a POJO when you want types. Writing a
   POJO is explicit: `setValue` **replaces** the subtree, `mergeValue` **merges** into it — with merge, unknown
   keys a user added by hand survive and the tree wins on conflict.
@@ -247,6 +249,27 @@ List<String> banner = cfg.getHeader();                                        //
 A class-level `@Comment` still seeds the header (its mode decides override vs set-if-absent). The header
 never swallows the first key's own comment: the blank line separating them is the boundary, so emit them as
 distinct blocks. On a `NONE`-fidelity codec (JSON) header/footer are held in memory but never written.
+
+### Breathing room
+
+A seeded file is dense by default — every comment glued to the entry above it. Two independent knobs open it
+up, and neither is written to the file as a setting:
+
+```java
+cfg.withBlankLineBeforeComments(1);        // one blank line above every COMMENTED root key
+cfg.withBlankLineBeforeComments(1, 2);     // ...reaching one level deeper
+
+cfg.setComment("DebugMode", "\n\nDebug system.");   // this path alone: two blank lines above it
+cfg.setBlankLinesBefore("DebugMode", 0);            // and this is how you take them away
+```
+
+The policy is a rendering policy, like a key pin: re-assert it at startup, it survives `reload()`, and it is
+**off by default** so a plain load/save stays byte-identical. It floors only commented entries, never the
+first entry of a block (the header or the parent key already separates), and never tightens spacing the file
+already had. The `\n` directive works at any depth and wins when it asks for more.
+
+> Once a save has emitted those blank lines they belong to the file — turning the policy off later does not
+> take them back; `setBlankLinesBefore(path, 0)` does.
 
 **→ Deep dive: [Default Values & Comments](https://github.com/EverNife/EveryConfig/wiki/Default-Values-and-Comments)**
 
