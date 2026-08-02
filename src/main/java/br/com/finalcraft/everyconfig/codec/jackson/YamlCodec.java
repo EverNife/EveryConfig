@@ -263,12 +263,18 @@ public final class YamlCodec implements Codec, CommentAware {
                 }
                 out.append('\n');
                 final ArrayNode arr = (ArrayNode) val;
-                if (allValueNodes(arr) && anyElementComment(arr, path, comments)) {
-                    // A scalar sequence with at least one per-element comment: render item by item so each
-                    // comment sits above its element. (Object/nested or uncommented sequences render whole
-                    // below, byte-identical to before.)
+                if (allValueNodes(arr)
+                        && (anyElementComment(arr, path, comments) || anyElementBlankLines(arr, path, comments))) {
+                    // A scalar sequence whose elements carry a comment or their own spacing: render item by
+                    // item so each one sits above its element. (Object/nested or plain sequences render
+                    // whole below, byte-identical to before.)
                     for (int i = 0; i < arr.size(); i++) {
-                        final String elemBlock = comments.getComment(DPath.joinSegment(path, String.valueOf(i)), CommentType.BLOCK);
+                        final String elemPath = DPath.joinSegment(path, String.valueOf(i));
+                        // an element's spacing is file data only: the style never floors it (it has no key)
+                        for (int b = comments.getBlankLinesBefore(elemPath); b > 0; b--) {
+                            out.append('\n');
+                        }
+                        final String elemBlock = comments.getComment(elemPath, CommentType.BLOCK);
                         if (elemBlock != null) {
                             for (final String commentLine : elemBlock.split("\n", -1)) {
                                 out.append(ind).append("  ").append(prefixComment(commentLine)).append('\n');
@@ -323,6 +329,16 @@ public final class YamlCodec implements Codec, CommentAware {
     private boolean anyElementComment(final ArrayNode arr, final String path, final CommentTree comments) {
         for (int i = 0; i < arr.size(); i++) {
             if (comments.getComment(DPath.joinSegment(path, String.valueOf(i)), CommentType.BLOCK) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** True when any element under {@code path} (as {@code path.i}) keeps blank lines above it. */
+    private boolean anyElementBlankLines(final ArrayNode arr, final String path, final CommentTree comments) {
+        for (int i = 0; i < arr.size(); i++) {
+            if (comments.getBlankLinesBefore(DPath.joinSegment(path, String.valueOf(i))) > 0) {
                 return true;
             }
         }

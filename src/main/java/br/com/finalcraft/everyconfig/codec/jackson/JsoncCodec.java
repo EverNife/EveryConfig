@@ -248,11 +248,17 @@ public final class JsoncCodec implements Codec, CommentAware {
      */
     private void emitArray(final ArrayNode arr, final String path, final String keyIndent,
                            final StringBuilder out, final CommentTree comments) {
-        if (allValueNodes(arr) && anyElementComment(arr, path, comments)) {
+        if (allValueNodes(arr)
+                && (anyElementComment(arr, path, comments) || anyElementBlankLines(arr, path, comments))) {
             final String elemIndent = keyIndent + "  ";
             out.append("[\n");
             for (int i = 0; i < arr.size(); i++) {
-                final String block = comments.getComment(DPath.joinSegment(path, String.valueOf(i)), CommentType.BLOCK);
+                final String elemPath = DPath.joinSegment(path, String.valueOf(i));
+                // an element's spacing is file data only: the style never floors it (it has no key)
+                for (int b = comments.getBlankLinesBefore(elemPath); b > 0; b--) {
+                    out.append('\n');
+                }
+                final String block = comments.getComment(elemPath, CommentType.BLOCK);
                 if (block != null) {
                     for (final String commentLine : block.split("\n", -1)) {
                         out.append(elemIndent).append(prefixComment(commentLine)).append('\n');
@@ -288,6 +294,16 @@ public final class JsoncCodec implements Codec, CommentAware {
     private static boolean anyElementComment(final ArrayNode arr, final String path, final CommentTree comments) {
         for (int i = 0; i < arr.size(); i++) {
             if (comments.getComment(DPath.joinSegment(path, String.valueOf(i)), CommentType.BLOCK) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** True when any element under {@code path} (as {@code path.i}) keeps blank lines above it. */
+    private static boolean anyElementBlankLines(final ArrayNode arr, final String path, final CommentTree comments) {
+        for (int i = 0; i < arr.size(); i++) {
+            if (comments.getBlankLinesBefore(DPath.joinSegment(path, String.valueOf(i))) > 0) {
                 return true;
             }
         }
@@ -428,8 +444,14 @@ public final class JsoncCodec implements Codec, CommentAware {
         return keyColon(trimmed) < 0; // a scalar element has no leading "key": separator
     }
 
-    /** Attach the drained {@code pending} lines as {@code path}'s block comment (no blank-line tracking). */
+    /** Attach the drained {@code pending} lines as the element's block comment plus the blank lines above it
+     *  — the count is what makes an element's vertical spacing survive a round-trip. */
     private void assignElementComment(final CommentTree tree, final String path, final List<String> pending) {
+        int leadingBlanks = 0;
+        while (leadingBlanks < pending.size() && pending.get(leadingBlanks).isEmpty()) {
+            leadingBlanks++;
+        }
+        tree.setBlankLinesBefore(path, leadingBlanks);
         final List<String> blockLines = extractBlockLines(pending);
         if (!blockLines.isEmpty()) {
             tree.putFileComment(path, String.join("\n", blockLines), CommentType.BLOCK);
