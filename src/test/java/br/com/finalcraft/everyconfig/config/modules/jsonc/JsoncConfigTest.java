@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.util.Arrays;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -61,5 +62,24 @@ class JsoncConfigTest extends AbstractConfigTest {
     @DisplayName("[jsonc] the emitted layout matches the golden fixture byte-for-byte")
     void goldenLayout_byteStable() throws IOException {
         assertGoldenLayout();
+    }
+
+    @Test
+    @Order(312)
+    @DisplayName("[jsonc] the spacing policy floats a blank line at the exact emitted layout")
+    void commentSpacingPolicy_literalLayout() throws IOException {
+        final Config c = open().withBlankLineBeforeComments(1);
+        c.setValue("alpha", 1);
+        c.setValue("beta", 2);
+        c.setComment("beta", "documented");
+        c.save();
+
+        assertEquals("{\n"
+                        + "  \"alpha\": 1,\n"
+                        + "\n"
+                        + "  // documented\n"
+                        + "  \"beta\": 2\n"
+                        + "}\n",
+                readText());
     }
 }

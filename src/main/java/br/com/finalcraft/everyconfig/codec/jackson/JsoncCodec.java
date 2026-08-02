@@ -166,7 +166,7 @@ public final class JsoncCodec implements Codec, CommentAware {
             out.append('\n'); // blank line separates the header from the opening brace
         }
 
-        emitObject((ObjectNode) tree, "", 0, out, comments, order);
+        emitObject((ObjectNode) tree, "", 0, 1, out, comments, order);
         out.append('\n');
 
         final List<String> footer = comments.getFooter();
@@ -193,7 +193,7 @@ public final class JsoncCodec implements Codec, CommentAware {
     // ---- structure emitter ---------------------------------------------
 
     /** Emits {@code { ... }} for an object (no trailing newline); the caller positions it after a key. */
-    private void emitObject(final ObjectNode node, final String parentPath, final int indent,
+    private void emitObject(final ObjectNode node, final String parentPath, final int indent, final int depth,
                             final StringBuilder out, final CommentTree comments, final KeyOrder order) {
         final String ind = spaces(indent * 2);
         final String childInd = spaces((indent + 1) * 2);
@@ -209,7 +209,8 @@ public final class JsoncCodec implements Codec, CommentAware {
             final JsonNode val = node.get(key);
             final String path = DPath.joinSegment(parentPath, key);
 
-            for (int b = comments.getBlankLinesBefore(path); b > 0; b--) {
+            // the file's vertical spacing above this key, raised to the style's floor
+            for (int b = comments.effectiveBlankLinesBefore(path, depth, i == 0); b > 0; b--) {
                 out.append('\n');
             }
             final String block = comments.getComment(path, CommentType.BLOCK);
@@ -221,7 +222,7 @@ public final class JsoncCodec implements Codec, CommentAware {
 
             out.append(childInd).append(dumpScalar(key)).append(": ");
             if (val instanceof ObjectNode && val.size() > 0) {
-                emitObject((ObjectNode) val, path, indent + 1, out, comments, order);
+                emitObject((ObjectNode) val, path, indent + 1, depth + 1, out, comments, order);
             } else if (val instanceof ArrayNode && val.size() > 0) {
                 emitArray((ArrayNode) val, path, childInd, out, comments);
             } else {

@@ -178,7 +178,7 @@ public final class YamlCodec implements Codec, CommentAware {
             out.append('\n'); // blank line separates the header from the first key
         }
 
-        emit((ObjectNode) tree, "", 0, out, comments, order);
+        emit((ObjectNode) tree, "", 0, 1, out, comments, order);
 
         final List<String> footer = comments.getFooter();
         if (!footer.isEmpty()) {
@@ -226,15 +226,18 @@ public final class YamlCodec implements Codec, CommentAware {
 
     // ---- structure emitter ---------------------------------------------
 
-    private void emit(final ObjectNode node, final String parentPath, final int indent,
+    private void emit(final ObjectNode node, final String parentPath, final int indent, final int depth,
                       final StringBuilder out, final CommentTree comments, final KeyOrder order) {
         final String ind = spaces(indent);
-        for (final String key : orderedFieldNames(node, parentPath, order)) {
+        final List<String> keys = orderedFieldNames(node, parentPath, order);
+        for (int k = 0; k < keys.size(); k++) {
+            final String key = keys.get(k);
             final JsonNode val = node.get(key);
             final String path = DPath.joinSegment(parentPath, key);
 
-            for (int b = comments.getBlankLinesBefore(path); b > 0; b--) {
-                out.append('\n'); // preserve the file's vertical spacing above this key
+            // the file's vertical spacing above this key, raised to the style's floor
+            for (int b = comments.effectiveBlankLinesBefore(path, depth, k == 0); b > 0; b--) {
+                out.append('\n');
             }
 
             final String block = comments.getComment(path, CommentType.BLOCK);
@@ -251,7 +254,7 @@ public final class YamlCodec implements Codec, CommentAware {
                     out.append(side);
                 }
                 out.append('\n');
-                emit((ObjectNode) val, path, indent + 2, out, comments, order);
+                emit((ObjectNode) val, path, indent + 2, depth + 1, out, comments, order);
             } else if (val instanceof ArrayNode && val.size() > 0) {
                 // A sequence: render the key, then the elements re-indented beneath it.
                 out.append(ind).append(key).append(':');

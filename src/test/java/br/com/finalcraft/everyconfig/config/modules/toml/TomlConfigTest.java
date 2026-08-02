@@ -154,4 +154,26 @@ class TomlConfigTest extends AbstractConfigTest {
     void goldenLayout_byteStable() throws IOException {
         assertGoldenLayout();
     }
+
+    /** TOML emits bare pairs before sub-sections, so the first entry of the block is the first SCALAR even
+     *  when a table was inserted ahead of it — the spacing policy must follow that emitted order. */
+    @Test
+    @Order(221)
+    @DisplayName("[toml] the first entry of a block is the first emitted one, not the first in the tree")
+    void commentSpacingPolicy_followsEmitOrder() throws IOException {
+        final Config c = open().withBlankLineBeforeComments(1);
+        c.setValue("section.k", 3);            // inserted first, but emitted last (it is a table)
+        c.setComment("section", "the table");
+        c.setValue("alpha", 1);
+        c.setComment("alpha", "the first scalar");
+        c.save();
+
+        assertEquals("# the first scalar\n"
+                        + "alpha = 1\n"
+                        + "\n"
+                        + "# the table\n"
+                        + "[section]\n"
+                        + "k = 3\n",
+                readText());
+    }
 }

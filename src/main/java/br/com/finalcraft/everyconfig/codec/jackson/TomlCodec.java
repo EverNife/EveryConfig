@@ -153,7 +153,7 @@ public final class TomlCodec implements Codec, CommentAware {
             out.append('\n'); // blank line separates the header from the first entry
         }
 
-        emitTable((ObjectNode) tree, "", out, comments, order);
+        emitTable((ObjectNode) tree, "", 1, out, comments, order);
 
         final List<String> footer = comments.getFooter();
         if (!footer.isEmpty()) {
@@ -188,7 +188,7 @@ public final class TomlCodec implements Codec, CommentAware {
      * ordered pass so their relative file order is preserved. A {@code null} value is omitted (TOML has no
      * null).
      */
-    private void emitTable(final ObjectNode node, final String path, final StringBuilder out,
+    private void emitTable(final ObjectNode node, final String path, final int depth, final StringBuilder out,
                            final CommentTree comments, final KeyOrder order) {
         final List<String> scalars = new ArrayList<>();
         final List<String> subSections = new ArrayList<>();
@@ -204,9 +204,13 @@ public final class TomlCodec implements Codec, CommentAware {
             }
         }
 
+        // TOML emits bare pairs before sub-sections, so "first in the block" spans BOTH loops.
+        boolean first = true;
+
         for (final String key : scalars) {
             final String p = DPath.joinSegment(path, key);
-            emitLeadingComments(p, out, comments);
+            emitLeadingComments(p, depth, first, out, comments);
+            first = false;
             out.append(keyToken(key)).append(" = ").append(writeScalar(node.get(key)));
             final String side = comments.getComment(p, CommentType.SIDE);
             if (side != null) {
@@ -218,16 +222,17 @@ public final class TomlCodec implements Codec, CommentAware {
         for (final String key : subSections) {
             final String p = DPath.joinSegment(path, key);
             final JsonNode v = node.get(key);
-            emitLeadingComments(p, out, comments);
+            emitLeadingComments(p, depth, first, out, comments);
+            first = false;
             if (v.isObject()) {
                 out.append('[').append(tablePath(p)).append(']').append('\n');
-                emitTable((ObjectNode) v, p, out, comments, order);
+                emitTable((ObjectNode) v, p, depth + 1, out, comments, order);
             } else {
                 // A list of non-empty objects renders as the idiomatic repeated [[path]] form; each element
                 // is a fresh table body under the same path.
                 for (final JsonNode element : v) {
                     out.append("[[").append(tablePath(p)).append("]]").append('\n');
-                    emitTable((ObjectNode) element, p, out, comments, order);
+                    emitTable((ObjectNode) element, p, depth + 1, out, comments, order);
                 }
             }
         }
@@ -251,8 +256,12 @@ public final class TomlCodec implements Codec, CommentAware {
         return true;
     }
 
-    private void emitLeadingComments(final String path, final StringBuilder out, final CommentTree comments) {
-        for (int b = comments.getBlankLinesBefore(path); b > 0; b--) {
+    /** {@code firstInBlock} comes from the caller because emission reorders (scalars before sub-sections):
+     *  the first entry of this table is the first SCALAR when there is one, not the first key of the tree. */
+    private void emitLeadingComments(final String path, final int depth, final boolean firstInBlock,
+                                     final StringBuilder out, final CommentTree comments) {
+        // the file's vertical spacing above this key, raised to the style's floor
+        for (int b = comments.effectiveBlankLinesBefore(path, depth, firstInBlock); b > 0; b--) {
             out.append('\n');
         }
         final String block = comments.getComment(path, CommentType.BLOCK);

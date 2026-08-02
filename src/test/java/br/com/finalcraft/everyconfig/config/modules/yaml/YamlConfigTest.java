@@ -115,4 +115,28 @@ class YamlConfigTest extends AbstractConfigTest {
         final Config r = open();
         assertEquals("the server pool", r.getComment("servers", CommentType.SIDE));
     }
+
+    @Test
+    @Order(304)
+    @DisplayName("[yaml] the spacing policy floats a blank line at the exact emitted layout")
+    void commentSpacingPolicy_literalLayout() throws IOException {
+        final Config c = open().withBlankLineBeforeComments(1);
+        c.setValue("alpha", 1);
+        c.setValue("beta", 2);
+        c.setComment("beta", "documented");
+        c.setValue("gamma.first", 3);
+        c.setValue("gamma.second", 4);
+        c.setComment("gamma.second", "nested doc");
+        c.save();
+
+        assertEquals("alpha: 1\n"
+                        + "\n"
+                        + "# documented\n"
+                        + "beta: 2\n"
+                        + "gamma:\n"
+                        + "  first: 3\n"
+                        + "  # nested doc\n"       // depth 2 is out of the default maxDepth 1
+                        + "  second: 4\n",
+                readText());
+    }
 }
