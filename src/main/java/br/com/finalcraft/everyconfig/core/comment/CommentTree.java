@@ -25,7 +25,7 @@ public final class CommentTree {
     private static final class Entry {
         String block;
         String side;
-        int blankLinesBefore;
+        Integer blankLinesBefore; // null = nothing declared; leaves room for a future "exactly N" sentinel
     }
 
     private final Map<String, Entry> byPath = new LinkedHashMap<>();
@@ -34,14 +34,34 @@ public final class CommentTree {
     private List<String> header;
     private List<String> footer;
 
+    /**
+     * Rendering policy, stamped onto the snapshot the emitter receives; never parsed from, or written to,
+     * a file. On a tree owned by a Config, set it through Config (see its javadoc), not here.
+     */
+    private CommentStyle style = CommentStyle.NONE;
+
     private Entry entry(final String path) {
         return byPath.computeIfAbsent(path == null ? "" : path, k -> new Entry());
     }
 
     // ---- load (from file) ----
 
+    /**
+     * The parser's write path: stores the captured text verbatim. A "cushioned" block — one whose first
+     * line is a bare marker — legitimately yields a text starting with an empty line, and reading that as a
+     * spacing directive would rewrite a file that round-trips byte-identically today.
+     */
     public void putFileComment(final String path, final String comment, final CommentType type) {
-        setComment(path, comment, type);
+        if (comment == null) {
+            removeComment(path, type);
+            return;
+        }
+        final Entry e = entry(path);
+        if (type == CommentType.SIDE) {
+            e.side = comment;
+        } else {
+            e.block = comment;
+        }
     }
 
     // ---- write: always overwrite ----
@@ -54,9 +74,40 @@ public final class CommentTree {
         final Entry e = entry(path);
         if (type == CommentType.SIDE) {
             e.side = comment;
+            return;
+        }
+        // Leading empty lines in an API-written block are a spacing directive, not comment content: they
+        // become blank lines above the entry and are peeled off the stored text.
+        final int leading = leadingBlankLines(comment);
+        if (leading > 0) {
+            e.blankLinesBefore = leading;
+            e.block = dropLines(comment, leading);
         } else {
             e.block = comment;
         }
+    }
+
+    /**
+     * Count of empty lines opening {@code text}, or 0 when NO line is non-empty — a text made only of empty
+     * lines keeps its historical meaning (bare marker lines) instead of reading as a directive.
+     */
+    private static int leadingBlankLines(final String text) {
+        int n = 0;
+        for (final String line : text.split("\n", -1)) {
+            if (!line.isEmpty()) {
+                return n;
+            }
+            n++;
+        }
+        return 0;
+    }
+
+    private static String dropLines(final String text, final int count) {
+        int from = 0;
+        for (int i = 0; i < count; i++) {
+            from = text.indexOf('\n', from) + 1;
+        }
+        return text.substring(from);
     }
 
     // ---- write: only when nothing is there yet ----
@@ -96,7 +147,35 @@ public final class CommentTree {
 
     public int getBlankLinesBefore(final String path) {
         final Entry e = byPath.get(path == null ? "" : path);
-        return e == null ? 0 : e.blankLinesBefore;
+        return (e == null || e.blankLinesBefore == null) ? 0 : e.blankLinesBefore;
+    }
+
+    /**
+     * The blank-line count the emitter writes above {@code path}: the stored count (from the file, or from
+     * a directive) raised to the style's floor. The floor reaches only a COMMENTED entry, never the FIRST
+     * entry emitted in its block (there is already a boundary there), and only down to the style's max
+     * depth. {@code depth} is 1 for a root key; {@code firstInBlock} must be computed in EMIT order, not
+     * tree order.
+     */
+    public int effectiveBlankLinesBefore(final String path, final int depth, final boolean firstInBlock) {
+        final int stored = getBlankLinesBefore(path);
+        if (style.blankLines() == 0 || firstInBlock || depth > style.maxDepth()) {
+            return stored;
+        }
+        if (getComment(path, CommentType.BLOCK) == null) {
+            return stored;
+        }
+        return Math.max(stored, style.blankLines());
+    }
+
+    // ---- rendering policy ----
+
+    public void setStyle(final CommentStyle style) {
+        this.style = style == null ? CommentStyle.NONE : style;
+    }
+
+    public CommentStyle getStyle() {
+        return style;
     }
 
     // ---- header / footer ----
@@ -202,6 +281,7 @@ public final class CommentTree {
         }
         out.header = header == null ? null : new ArrayList<>(header);
         out.footer = footer == null ? null : new ArrayList<>(footer);
+        out.style = style;
         return out;
     }
 
