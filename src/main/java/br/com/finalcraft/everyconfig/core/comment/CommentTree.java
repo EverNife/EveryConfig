@@ -170,6 +170,11 @@ public final class CommentTree {
 
     // ---- rendering policy ----
 
+    /**
+     * Sets the rendering policy of a STANDALONE tree (one emitted through a codec directly). On a tree owned
+     * by a config, set it there instead: the config stamps its own style onto the snapshot it emits from, so
+     * a style set here would be overwritten on every save.
+     */
     public void setStyle(final CommentStyle style) {
         this.style = style == null ? CommentStyle.NONE : style;
     }

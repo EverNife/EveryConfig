@@ -21,6 +21,7 @@ import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import br.com.finalcraft.everyconfig.core.KeyOrder;
 import br.com.finalcraft.everyconfig.core.coerce.NodeCoercion;
 import br.com.finalcraft.everyconfig.core.coerce.TypeFamily;
+import br.com.finalcraft.everyconfig.core.comment.CommentStyle;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
 import br.com.finalcraft.everyconfig.core.tree.DPath;
@@ -94,6 +95,10 @@ public class Config implements AutoCloseable {
     // the captured KeyOrder at every save (see encodeWith) so a key stays FIRST/LAST regardless of later
     // seeding; never written to the file. Populated by pinFirst/pinLast/unpin.
     private final Map<String, KeyOrder.Zone> pins = new LinkedHashMap<>();
+
+    // In-memory RENDERING policy, the spacing twin of the pins above: re-asserted on every save, survives a
+    // reload(), never written to the file. Held apart from the comment overlay so a reload cannot drop it.
+    private CommentStyle commentStyle = CommentStyle.NONE;
 
     public Config() {
         this(JsonNodeFactory.instance.objectNode(), new CommentTree(), KeyOrder.empty());
@@ -897,7 +902,14 @@ public class Config implements AutoCloseable {
 
     // ==================== comment seam (seed-on-absent + pass-through) ====================
 
-    /** Set the comment, overwriting any existing one. */
+    /**
+     * Set the comment, overwriting any existing one.
+     *
+     * <p>Empty lines OPENING a block comment are a spacing directive, not text: they become that many blank
+     * lines above the entry (see {@link #setBlankLinesBefore}) and are peeled off the stored comment, so
+     * {@code setComment(p, "\n\nX")} reads back as {@code "X"}. Empty lines in the MIDDLE of the block are
+     * unaffected and still emit as bare marker lines. A text made only of empty lines is not a directive.
+     */
     public void setComment(final String path, final String comment) {
         comments.setComment(path, comment, CommentType.BLOCK);
         dirty = true;
@@ -926,6 +938,64 @@ public class Config implements AutoCloseable {
 
     public String getComment(final String path, final CommentType type) {
         return comments.getComment(path, type);
+    }
+
+    // ==================== comment spacing (a rendering policy, like a pin) ====================
+
+    /**
+     * Floats {@code blankLines} empty lines above every COMMENTED root key on save, so a documented file
+     * reads as paragraphs instead of one dense wall. 0 turns it off (the default: a plain load/save then
+     * keeps the file's vertical shape byte-for-byte).
+     *
+     * <p>Never above an uncommented key, and never above the first entry emitted in a block (below the
+     * header, a '{', a '[table]' or a parent key there is already a boundary). A path that already carries
+     * MORE spacing keeps it — this is a floor, not an assignment.
+     *
+     * <p>Note the ratchet: once a save has emitted the blank lines they are file data, so a later load reads
+     * them back as the path's own spacing. Turning the policy off (or lowering it) does not remove them;
+     * {@link #setBlankLinesBefore} does. Returns {@code this} for chaining.
+     */
+    public Config withBlankLineBeforeComments(final int blankLines) {
+        return withBlankLineBeforeComments(blankLines, 1);
+    }
+
+    /** As {@link #withBlankLineBeforeComments(int)}, reaching down to {@code maxDepth} (1 = root keys only,
+     *  2 also reaches the keys of a top-level section, and so on). */
+    public Config withBlankLineBeforeComments(final int blankLines, final int maxDepth) {
+        return withCommentStyle(CommentStyle.of(blankLines, maxDepth));
+    }
+
+    /**
+     * Sets the whole {@link CommentStyle} at once. Like a pin it is an in-memory RENDERING policy, not file
+     * data: it is re-asserted on every save and survives a {@link #reload()}, but nothing is written to mark
+     * it — so re-assert it on a fresh process, the same way {@code @Comment} seeding is re-run.
+     * Returns {@code this} for chaining.
+     */
+    public Config withCommentStyle(final CommentStyle style) {
+        final CommentStyle next = style == null ? CommentStyle.NONE : style;
+        if (!next.equals(commentStyle)) {
+            commentStyle = next;
+            dirty = true; // the emitted bytes change, so saveIfDirty() must rewrite
+        }
+        return this;
+    }
+
+    public CommentStyle getCommentStyle() {
+        return commentStyle;
+    }
+
+    /** Sets the blank lines kept above {@code path} — the escape hatch of the leading-newline directive, and
+     *  the only way to REMOVE spacing (0). Returns {@code this}. */
+    public Config setBlankLinesBefore(final String path, final int n) {
+        comments.setBlankLinesBefore(path, n);
+        dirty = true;
+        return this;
+    }
+
+    /** The blank lines DECLARED for {@code path} (from the file or a directive) — not the effective count,
+     *  which also depends on where the key lands in its block and so exists only inside the emitter. */
+    public int getBlankLinesBefore(final String path) {
+        return comments.getBlankLinesBefore(path);
     }
 
     // ==================== header / footer ====================
@@ -1549,6 +1619,7 @@ public class Config implements AutoCloseable {
     private byte[] encodeWith(final Codec codec, final Charset charset) {
         final ObjectNode treeSnapshot = root.deepCopy();
         final CommentTree commentsSnapshot = comments.copy();
+        commentsSnapshot.setStyle(commentStyle); // the rendering policy rides along; the emitters read it
         final String text;
         if (codec instanceof CommentAware && codec.commentFidelity() != CommentFidelity.NONE) {
             text = ((CommentAware) codec).writeWithComments(treeSnapshot, commentsSnapshot, effectiveKeyOrder());
