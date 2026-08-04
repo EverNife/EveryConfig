@@ -389,8 +389,7 @@ public final class EntityBinder<T> {
     private void seedFieldComments(final Class<?> clazz, final String basePath, final Set<Class<?>> onPath) {
         final CommentTree comments = config.getCommentTree();
         for (final Field f : BindingNames.allFields(clazz)) {
-            final Section sec = f.getAnnotation(Section.class);
-            final String fieldPath = sectionAwarePath(basePath, sec, BindingNames.keyFor(f));
+            final String fieldPath = BindingNames.sectionAwarePath(basePath, f);
             final Comment c = f.getAnnotation(Comment.class);
             if (c != null) {
                 final String text = String.join("\n", c.value());
@@ -400,6 +399,7 @@ public final class EntityBinder<T> {
                     comments.setDefaultComment(fieldPath, text, CommentType.BLOCK); // user-edited comment wins
                 }
             }
+            final Section sec = f.getAnnotation(Section.class);
             if (sec != null && !sec.value().isEmpty()) {
                 continue; // a @Section field's value relocates whole; its type is not descended
             }
@@ -408,19 +408,6 @@ public final class EntityBinder<T> {
                 onPath.remove(f.getType());
             }
         }
-    }
-
-    /** The path where field {@code key}'s value/comment lands under {@code basePath}, honoring a
-     *  {@code @Section} spine (dotted) ahead of the key — the same grammar the value write uses to relocate. */
-    private static String sectionAwarePath(final String basePath, final Section sec, final String key) {
-        String fieldPath = "";
-        if (sec != null && !sec.value().isEmpty()) {
-            for (final String seg : DPath.split(sec.value())) { // @Section spells nesting with '.'
-                fieldPath = DPath.joinSegment(fieldPath, seg);
-            }
-        }
-        fieldPath = DPath.joinSegment(fieldPath, key); // a dot inside the key stays escaped in the path
-        return basePath.isEmpty() ? fieldPath : DPath.join(basePath, fieldPath);
     }
 
     private T doBind(final T base, final JsonNode rawSource) {

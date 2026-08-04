@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * needed to report it or to build a screen from it — where its value lives in the FILE, what the field
  * documents, and what a freshly constructed entity holds there.
  *
- * <p>Immutable and resolved by the library; a consumer holds and reads a site, it never builds one. The
+ * <p>Immutable and built only by {@link RuleModel}; a consumer holds and reads a site, never builds one. The
  * only mutable part is the memoized {@link #defaultValue()}, which is idempotent.
  */
 public final class RuleSite {

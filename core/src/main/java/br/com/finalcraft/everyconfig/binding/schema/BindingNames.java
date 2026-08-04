@@ -3,6 +3,8 @@ import br.com.finalcraft.everyconfig.binding.BindException;
 
 import br.com.finalcraft.everyconfig.annotation.KeyIndex;
 import br.com.finalcraft.everyconfig.annotation.Key;
+import br.com.finalcraft.everyconfig.annotation.Section;
+import br.com.finalcraft.everyconfig.core.tree.DPath;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.lang.reflect.Field;
@@ -47,6 +49,24 @@ public final class BindingNames {
             return jp.value();
         }
         return f.getName();
+    }
+
+    /**
+     * Where a field's value lands under {@code basePath}: the {@code @Section} spine first (its dots spell
+     * nesting), then the field's key (a dot INSIDE the key stays escaped, so it remains one key). This is the
+     * ONE path grammar — the value write relocates by it, the comment seeding lands by it, and rule
+     * resolution addresses by it — so the three can never drift into addressing different places.
+     */
+    public static String sectionAwarePath(final String basePath, final Field field) {
+        String fieldPath = "";
+        final Section section = field.getAnnotation(Section.class);
+        if (section != null && !section.value().isEmpty()) {
+            for (final String segment : DPath.split(section.value())) {
+                fieldPath = DPath.joinSegment(fieldPath, segment);
+            }
+        }
+        fieldPath = DPath.joinSegment(fieldPath, keyFor(field));
+        return DPath.isRoot(basePath) ? fieldPath : DPath.join(basePath, fieldPath);
     }
 
     /** Every declared field up the hierarchy, subclass first. Cached per class; the returned list is
