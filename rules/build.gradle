@@ -1,0 +1,22 @@
+// Folder is 'rules'; the published artifact is 'everyconfig-rules'.
+base {
+    archivesName = 'everyconfig-rules'
+}
+
+dependencies {
+    // The rule seam lives in the core, and the two artifacts release in lockstep.
+    api project(':core')
+
+    // Primary rule vocabulary: the annotations must be on the classpath of whoever declares them.
+    // Interfaces only - no Bean Validation provider is ever pulled in.
+    api libs.jakarta.validation
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = 'everyconfig-rules'
+            from components.java
+        }
+    }
+}

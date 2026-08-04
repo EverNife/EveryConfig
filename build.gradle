@@ -1,106 +1,176 @@
-plugins {
-    id 'java-library'
-    id 'maven-publish'
-}
-
-group = 'br.com.finalcraft'
-version = libs.versions.everyconfig.get()
-
-repositories {
-    mavenCentral()
-    maven { url = 'https://maven.petrus.dev/public' }
-}
-
-dependencies {
-    // ---- Jackson: the serialization engine (data <-> ObjectNode <-> text/entity) ----
-    api platform(libs.jackson.bom)
-    api libs.jackson.databind
-    api libs.jackson.dataformat.yaml
-    api libs.jackson.dataformat.toml
-    implementation libs.jackson.datatype.jsr310
-    implementation libs.jackson.datatype.jdk8 // Optional<> support
-
-    api libs.jetbrains.annotations
-
-    // ---- Lombok ----
-    compileOnly libs.lombok
-    annotationProcessor libs.lombok
-    testCompileOnly libs.lombok
-    testAnnotationProcessor libs.lombok
-
-    // ---- Jabel: write modern Java syntax, emit Java 8 bytecode ----
-    annotationProcessor libs.jabel
-    compileOnly libs.jabel
-
-    // ---- Tests ----
-    testImplementation libs.junit.jupiter.api
-    testRuntimeOnly libs.junit.jupiter.engine
-    testRuntimeOnly libs.junit.platform.launcher // Gradle 9 requires it explicitly
-}
-
-compileJava.options.encoding = 'UTF-8'
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-    options.compilerArgs.add('-parameters') // keep parameter names on the compiled jar
-}
-
-// One toolchain (Java 25) runs Gradle's compile/test for this project regardless of the launching JDK,
-// so the build is reproducible no matter which JDK starts it.
-java {
-    withSourcesJar()
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
-    }
-}
-
-// Production code: modern Java source syntax (Jabel lifts javac's source check) emitting Java 8 bytecode.
-// options.release = 8 keeps the API floor at Java 8 so no Java 9+ library APIs leak into production.
-compileJava {
-    sourceCompatibility = 25 // IDE hint only; options.release governs the actual compile
-    options.release = 8
-    javaCompiler = javaToolchains.compilerFor {
-        languageVersion = JavaLanguageVersion.of(25)
-    }
-}
-
-// Tests are plain Java compiled to the same Java 8 floor, so the suite can also run on a Java 8 runtime.
-compileTestJava {
-    options.release = 8
-}
+// Project version: single source of truth is gradle/libs.versions.toml ([versions].everyconfig).
+// Captured here (root project scope, where the `libs` catalog accessor is unambiguous) and
+// applied to every module below.
+def everyconfigVersion = libs.versions.everyconfig.get()
 
 // The suite runs on Java 25 by default; pass -PtestJdk=8|11|17|21|25 to run it on another runtime.
 def testJdkVersion = (project.findProperty('testJdk') ?: '25').toString().toInteger()
-test {
-    useJUnitPlatform()
-    javaLauncher = javaToolchains.launcherFor {
-        languageVersion = JavaLanguageVersion.of(testJdkVersion)
+// The stress/benchmark suite (config.stress.*) is gated on a system property; a normal run skips it.
+def stressEnabled = project.hasProperty('stress')
+
+subprojects {
+    apply plugin: 'java-library'
+    apply plugin: 'idea'
+    apply plugin: 'maven-publish'
+
+    group = 'br.com.finalcraft.everyconfig'
+    version = everyconfigVersion
+
+    repositories {
+        mavenCentral()
+        maven { url = 'https://maven.petrus.dev/public' }
     }
-    // The stress/benchmark suite (config.stress.*) is gated on this system property; a normal run skips it.
-    // Enable with -Pstress, which also raises the heap so the many-live-configs memory case has room.
-    if (project.hasProperty('stress')) {
-        systemProperty 'everyconfig.stress', 'true'
-        maxHeapSize = '2g'
+
+    dependencies {
+        // ---- Lombok ----
+        compileOnly libs.lombok
+        annotationProcessor libs.lombok
+        testCompileOnly libs.lombok
+        testAnnotationProcessor libs.lombok
+
+        // Gradle 9 no longer provides the JUnit Platform launcher from its own
+        // distribution - every test JVM needs it on the runtime classpath.
+        testRuntimeOnly libs.junit.platform.launcher
+    }
+
+    compileJava.options.encoding = 'UTF-8'
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.compilerArgs.add('-parameters') // keep parameter names on the compiled jar
+    }
+
+    // One toolchain (Java 25) runs Gradle's compile/test for every module regardless of the launching JDK,
+    // so the build is reproducible no matter which JDK starts it.
+    java {
+        withSourcesJar()
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
+    }
+
+    test {
+        useJUnitPlatform()
+        javaLauncher = javaToolchains.launcherFor {
+            languageVersion = JavaLanguageVersion.of(testJdkVersion)
+        }
+        // Enable the stress suite with -Pstress, which also raises the heap so the many-live-configs
+        // memory case has room.
+        if (stressEnabled) {
+            systemProperty 'everyconfig.stress', 'true'
+            maxHeapSize = '2g'
+        }
+    }
+
+    // Publications are defined per module (each sets its own everyconfig-* artifactId).
+    publishing {
+        repositories {
+            maven {
+                name = "PetrusRepo"
+                url = "https://maven.petrus.dev/public"
+                credentials {
+                    username = System.env.PETRUSMAVEN_ACTOR
+                    password = System.env.PETRUSMAVEN_TOKEN
+                }
+                authentication {
+                    basic(BasicAuthentication)
+                }
+            }
+        }
     }
 }
 
-publishing {
-    publications {
-        maven(MavenPublication) {
-            artifactId = 'EveryConfig'
-            from components.java
+// ======================================================================
+//  Dual-target: modern Java source syntax -> Java 8 bytecode (:core, :rules)
+//
+//  Production code is written in modern Java syntax but the published artifacts must run on a Java 8
+//  JVM. The FinalCraft Jabel fork (an annotation processor) lifts javac's source-level check so the
+//  Java 25 compiler can emit Java 8 bytecode, while `options.release = 8` keeps the *API* floor honest
+//  (no Java 9+ library APIs in production code).
+//
+//  Test code compiles to the same Java 8 floor, so the suite can also run on a Java 8 runtime
+//  (the -PtestJdk=8 run is the guard).
+// ======================================================================
+configure([project(':core'), project(':rules')]) {
+    dependencies {
+        annotationProcessor libs.jabel
+        compileOnly libs.jabel
+    }
+
+    compileJava {
+        sourceCompatibility = 25 // modern *syntax* (IDE hint; Jabel lifts javac's source check)
+        options.release = 8      // Java 8 *bytecode* and *API* floor
+    }
+
+    compileTestJava {
+        options.release = 8
+    }
+}
+
+// ======================================================================
+//  Doc version stamping - the install coordinates in the docs are derived from the
+//  project version (single source: gradle/libs.versions.toml), not hand-edited.
+//
+//    ./gradlew stampDocsVersions   - rewrite every everyconfig artifact coordinate
+//                                    in the docs to the current project version
+//    ./gradlew verifyDocsVersions  - fail if any is stale (wired into `check`)
+//
+//  With two published artifacts, a version kept by hand goes stale on the first release.
+//  The wiki is its own git repo and may not be cloned here, so its pages are stamped only
+//  when they exist on disk.
+// ======================================================================
+def versionedDocs = [file('README.md'), file('wiki/Installation.md')]
+
+// Returns `text` with every everyconfig artifact coordinate set to `ver`.
+// Three shapes are covered: Gradle/plain quoted coordinates, Maven <version> tags, and the
+// shields.io version badge (badge/version-<ver>-<color>) in the README header.
+// The badge <ver> may itself contain hyphens (pre-releases like 1.1.0-rc1), so it is matched
+// greedily up to the trailing -<color>[?query]) delimiter instead of stopping at the first hyphen.
+def stampEveryConfigVersion = { String text, String ver ->
+    text
+        .replaceAll(/(["']br\.com\.finalcraft\.everyconfig:everyconfig-[a-z-]+:)[^"']+(["'])/) { all, pre, post -> "${pre}${ver}${post}" }
+        .replaceAll(/(<artifactId>everyconfig-[a-z-]+<\/artifactId>\s*<version>)[^<]+(<\/version>)/) { all, pre, post -> "${pre}${ver}${post}" }
+        .replaceAll(/(badge\/version-)[^)]+(-[a-z0-9]+(?:\?[^)]*)?\))/) { all, pre, post -> "${pre}${ver}${post}" }
+}
+
+tasks.register('stampDocsVersions') {
+    description = 'Rewrites the docs artifact coordinates to the current project version.'
+    group = 'documentation'
+    def ver = everyconfigVersion
+    def docs = versionedDocs
+    def stamp = stampEveryConfigVersion
+    doLast {
+        docs.findAll { it.exists() }.each { f ->
+            def original = f.getText('UTF-8')
+            def stamped = stamp(original, ver)
+            if (stamped != original) {
+                f.write(stamped, 'UTF-8')
+                logger.lifecycle("stampDocsVersions: updated ${rootProject.relativePath(f)} -> ${ver}")
+            }
         }
     }
-    repositories {
-        maven {
-            name = "PetrusRepo"
-            url = "https://maven.petrus.dev/public"
-            credentials {
-                username = System.env.PETRUSMAVEN_ACTOR
-                password = System.env.PETRUSMAVEN_TOKEN
-            }
-            authentication {
-                basic(BasicAuthentication)
-            }
+}
+
+tasks.register('verifyDocsVersions') {
+    description = 'Fails if any documented artifact coordinate is out of sync with the project version.'
+    group = 'verification'
+    def ver = everyconfigVersion
+    def docs = versionedDocs
+    def stamp = stampEveryConfigVersion
+    doLast {
+        def stale = docs.findAll { it.exists() }
+                        .findAll { def t = it.getText('UTF-8'); stamp(t, ver) != t }
+                        .collect { rootProject.relativePath(it) }
+        if (!stale.isEmpty()) {
+            throw new GradleException(
+                "Documented versions are out of sync with the project version ${ver}: ${stale.join(', ')}. " +
+                "Run './gradlew stampDocsVersions' to fix.")
         }
+    }
+}
+
+// Make `check` (run per module) also verify the docs are in sync.
+subprojects {
+    tasks.matching { it.name == 'check' }.configureEach {
+        dependsOn rootProject.tasks.named('verifyDocsVersions')
     }
 }

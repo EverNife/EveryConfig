@@ -1,0 +1,33 @@
+// Folder is 'core'; the published artifact is 'everyconfig-core'.
+base {
+    archivesName = 'everyconfig-core'
+}
+
+// Toolchain (Java 25), the dual-target compileJava override (modern source syntax -> Java 8
+// bytecode via Jabel), Lombok, the JUnit Platform launcher and the publishing repository are
+// configured centrally in the root build.gradle.
+
+dependencies {
+    // ---- Jackson: the serialization engine (data <-> ObjectNode <-> text/entity) ----
+    api platform(libs.jackson.bom)
+    api libs.jackson.databind
+    api libs.jackson.dataformat.yaml
+    api libs.jackson.dataformat.toml
+    implementation libs.jackson.datatype.jsr310
+    implementation libs.jackson.datatype.jdk8 // Optional<> support
+
+    api libs.jetbrains.annotations
+
+    // ---- Tests ----
+    testImplementation libs.junit.jupiter.api
+    testRuntimeOnly libs.junit.jupiter.engine
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = 'everyconfig-core'
+            from components.java
+        }
+    }
+}

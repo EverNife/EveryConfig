@@ -12,7 +12,7 @@ data, never clobbers it.
 ![Runtime](https://img.shields.io/badge/runtime-Java%208%2B-blue)
 ![Build](https://img.shields.io/badge/build-JDK%2025-orange)
 ![Formats](https://img.shields.io/badge/formats-YAML%20%7C%20JSON%20%7C%20TOML%20%7C%20JSONC-green)
-![Version](https://img.shields.io/badge/version-1.0.1-informational)
+![Version](https://img.shields.io/badge/version-1.1.0-informational)
 
 </div>
 
@@ -91,7 +91,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'br.com.finalcraft:EveryConfig:1.0.1'
+    implementation 'br.com.finalcraft.everyconfig:everyconfig-core:1.1.0'
 }
 ```
 
@@ -104,11 +104,14 @@ dependencies {
 </repository>
 
 <dependency>
-  <groupId>br.com.finalcraft</groupId>
-  <artifactId>EveryConfig</artifactId>
-  <version>1.0.1</version>
+  <groupId>br.com.finalcraft.everyconfig</groupId>
+  <artifactId>everyconfig-core</artifactId>
+  <version>1.1.0</version>
 </dependency>
 ```
+
+> `everyconfig-rules` (`br.com.finalcraft.everyconfig:everyconfig-rules:1.1.0`) is an optional companion
+> artifact; `everyconfig-core` is the whole library on its own.
 
 > **Bukkit/Spigot consumers:** a plugin that bundles EveryConfig should run its own `shadowJar` and **relocate
 > `com.fasterxml.jackson` and `org.yaml.snakeyaml`** in *its* shade step. Relocation policy belongs at the leaf
@@ -468,7 +471,7 @@ export JAVA_HOME=/path/to/jdk-25      # PowerShell: $env:JAVA_HOME = "C:\path\to
 
 ```
 EveryConfig/
-└── src/main/java/br/com/finalcraft/everyconfig/
+└── core/src/main/java/br/com/finalcraft/everyconfig/
     ├── config/                  # Config (dynamic API + lifecycle) + config.section (ConfigSection)
     ├── core/                    # the canonical model: core.tree (DPath), core.coerce (NodeCoercion),
     │                            #   core.comment (CommentTree), KeyOrder
