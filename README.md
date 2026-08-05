@@ -582,9 +582,9 @@ EveryConfig/
   APIs, so the source avoids Java 9+ APIs; the `-PtestJdk=8` run is the guard. Validated green on Java 8, 11,
   17, 21 and 25.
 - **Dependencies.** Jackson `databind` + `dataformat-yaml`/`-toml` are on the public `api` surface (the tree
-  and codecs expose Jackson types); `jsr310` and `jdk8` (java.time / `Optional`) are runtime. The library's
-  major version tracks Jackson's major (`1.x` ⟷ Jackson 2.x). `everyconfig-rules` adds exactly one:
-  `jakarta.validation-api` (an interfaces-only jar — never a Bean Validation provider).
+  and codecs expose Jackson types); `jsr310` and `jdk8` (java.time / `Optional`) are runtime.
+  `everyconfig-rules` adds exactly one: `jakarta.validation-api` (an interfaces-only jar — never a Bean
+  Validation provider).
 - **Serialization.** Bound entities must be Jackson-serializable (a no-arg constructor plus accessors/fields,
   or appropriate Jackson annotations).
 - **No EverNifeCore, no Bukkit/Spigot API** — pure Java.

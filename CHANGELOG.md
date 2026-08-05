@@ -2,9 +2,7 @@
 
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html) — with one project-specific rule: **the major
-version tracks Jackson's major** (`EveryConfig 1.x` ⟷ Jackson `2.x`), because Jackson is deliberately part of
-the public surface.
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 Published artifacts, group `br.com.finalcraft.everyconfig`:
 
