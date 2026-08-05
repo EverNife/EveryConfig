@@ -58,6 +58,13 @@ public final class RuleViolation {
                 Collections.<Object>emptyList(), defaultMessage, null);
     }
 
+    /** A copy reported at {@code path} instead — what an evaluation outside a bind needs, where the value
+     *  lives wherever its caller put it and not where the binder's path grammar would have. */
+    RuleViolation withPath(final String path) {
+        return new RuleViolation(path, rule, actualValue, source, messageKey, messageArgs, defaultMessage,
+                severity);
+    }
+
     /** A copy carrying an engine-declared severity, which outranks the policy; null hands the decision back
      *  to the policy. */
     public RuleViolation withSeverity(@Nullable final RulePolicy.Severity severity) {

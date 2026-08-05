@@ -13,6 +13,28 @@ Published artifacts, group `br.com.finalcraft.everyconfig`:
 
 ## [Unreleased]
 
+### Added
+
+- **Rules can be judged outside a bind.** `RuleEvaluator` runs one `RuleSite` against a value the caller
+  already holds — for a scanner with its own field walk and key grammar, a screen validating what a user
+  just typed, a value assembled in memory. Everything a bind reads off the tree becomes a parameter (where
+  the value lives, what it is, where it came from, which instance declares it), and the violations come back
+  reported at the path the caller evaluated at rather than at the site's own.
+
+  ```java
+  RuleEvaluation outcome = RuleEvaluator.of(StandardRules.engine())
+          .withPolicy(RulePolicy.defaults().withSeverity(RulePolicy.Severity.LOG).withCorrections(true))
+          .evaluate(site, config.getConfigSection(key), value, ValueSource.FILE, owner);
+
+  for (RuleFinding finding : outcome.findings()) {   // violation() + severity() + message()
+      ...
+  }
+  ```
+
+  It never throws for a violation — the severity comes back on the finding and the caller decides — while a
+  handler that FAILS while judging still throws. `@RuleReview` does not run (it reads every violation of an
+  instance at once), and a correction reaches the field but not the tree.
+
 ## [1.1.0]
 
 A config POJO can now declare **meaning** on top of shape: `@Min(0) @Max(100)` on a percentage, `@Explicit`

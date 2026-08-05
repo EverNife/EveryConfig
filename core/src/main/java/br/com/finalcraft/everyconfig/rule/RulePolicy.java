@@ -62,6 +62,18 @@ public final class RulePolicy {
         return applyCorrections;
     }
 
+    /** What a violation of a value from {@code source} costs here, for a violation carrying no severity of
+     *  its own. {@code strictCoercion} answers for the file data this policy left to the bind's strictness. */
+    Severity severityFor(final ValueSource source, final boolean strictCoercion) {
+        if (source == ValueSource.DEFAULT) {
+            return defaultViolations;
+        }
+        if (severity != null) {
+            return severity;
+        }
+        return strictCoercion ? Severity.THROW : Severity.REPORT;
+    }
+
     public RulePolicy withSeverity(@Nullable final Severity severity) {
         return new RulePolicy(severity, defaultViolations, applyCorrections);
     }

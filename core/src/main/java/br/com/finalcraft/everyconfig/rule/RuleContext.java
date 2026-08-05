@@ -77,13 +77,7 @@ public final class RuleContext {
      * {@code severityFor(ValueSource.FILE)} on it instead of reaching into the policy.
      */
     public RulePolicy.Severity severityFor(final ValueSource source) {
-        if (source == ValueSource.DEFAULT) {
-            return policy.defaultViolations();
-        }
-        if (policy.severity() != null) {
-            return policy.severity();
-        }
-        return strictCoercion ? RulePolicy.Severity.THROW : RulePolicy.Severity.REPORT;
+        return policy.severityFor(source, strictCoercion);
     }
 
     /**

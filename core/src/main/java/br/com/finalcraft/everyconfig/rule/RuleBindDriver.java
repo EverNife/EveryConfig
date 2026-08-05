@@ -12,19 +12,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.NullNode;
 import org.jetbrains.annotations.Nullable;
 
-import java.lang.annotation.Annotation;
-import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
@@ -59,13 +54,6 @@ public final class RuleBindDriver {
     /** Element types already warned about carrying claimed rules in compact form — once per type. */
     private static final Set<Class<?>> WARNED_COMPACT =
             Collections.newSetFromMap(new ConcurrentHashMap<Class<?>, Boolean>());
-
-    private static final Comparator<Method> BY_NAME = new Comparator<Method>() {
-        @Override
-        public int compare(final Method left, final Method right) {
-            return left.getName().compareTo(right.getName());
-        }
-    };
 
     private final Object entity;
     private final RulePhase phase;
@@ -174,8 +162,8 @@ public final class RuleBindDriver {
             } catch (final BindException alreadyExplained) {
                 throw alreadyExplained;
             } catch (final Exception failed) {
-                throw new BindException("rule " + describe(site.rule()) + " at '" + sitePath + "' failed: "
-                        + failed.getMessage(), failed);
+                throw new BindException("rule " + RuleMessages.describe(site.rule()) + " at '" + sitePath
+                        + "' failed: " + failed.getMessage(), failed);
             }
             if (context.corrected()) {
                 carryFix(sitePath, source, context.correctedValue());
@@ -203,7 +191,7 @@ public final class RuleBindDriver {
         }
         if (site.kind() == RuleSite.Kind.METHOD) {
             final Method target = site.method();
-            final String tag = "rule " + describe(site.rule()) + " at '" + sitePath + "'";
+            final String tag = "rule " + RuleMessages.describe(site.rule()) + " at '" + sitePath + "'";
             try {
                 target.setAccessible(true);
                 return target.invoke(owner);
@@ -272,7 +260,8 @@ public final class RuleBindDriver {
                 final RuleSite site = owner.origins.get(i);
                 final RulePolicy.Severity severity = effectiveSeverity(violation);
                 if (severity == RulePolicy.Severity.THROW) {
-                    throw new BindException(rejection(violation, site, owner.instance.getClass()));
+                    throw new BindException(RuleMessages.rejection(violation, site,
+                            owner.instance.getClass()));
                 }
                 if (severity == RulePolicy.Severity.LOG) {
                     logOnce(violation, site, owner.instance.getClass());
@@ -290,16 +279,8 @@ public final class RuleBindDriver {
      * file data the policy said nothing about — the strictness the bind was already given.
      */
     private RulePolicy.Severity effectiveSeverity(final RuleViolation violation) {
-        if (violation.severity() != null) {
-            return violation.severity();
-        }
-        if (violation.source() == ValueSource.DEFAULT) {
-            return policy.defaultViolations();
-        }
-        if (policy.severity() != null) {
-            return policy.severity();
-        }
-        return strictCoercion ? RulePolicy.Severity.THROW : RulePolicy.Severity.REPORT;
+        return violation.severity() != null ? violation.severity()
+                : policy.severityFor(violation.source(), strictCoercion);
     }
 
     private void logOnce(final RuleViolation violation, final RuleSite site, final Class<?> entityType) {
@@ -309,47 +290,6 @@ public final class RuleBindDriver {
         if (LOGGED.add(key)) {
             LOG.warning("config rule violated: " + violation);
         }
-    }
-
-    /** The failure text, which has to teach the way out: bad file data says how to fix the file, and a
-     *  default that breaks its own rule says why no file ever will. */
-    private static String rejection(final RuleViolation violation, final RuleSite site,
-                                    final Class<?> entityType) {
-        final String member = memberOf(site, entityType);
-        if (violation.rule() == null) {
-            return "Rule review at '" + violation.path() + "' rejects "
-                    + (violation.source() == ValueSource.FILE ? "the file value '" : "the entity's own value '")
-                    + violation.actualValue() + "'. " + violation.defaultMessage();
-        }
-        if (violation.source() == ValueSource.FILE) {
-            return "Rule " + describe(violation.rule()) + " at '" + violation.path()
-                    + "' rejects the file value '" + violation.actualValue()
-                    + "'. Fix the value in the file, or relax the rule on " + member + ".";
-        }
-        if (violation.severity() != null) {
-            // The engine chose this severity itself, so it already knows what an absent value means here -
-            // a rule that fires BECAUSE the file is silent is asking for the file, not reporting a defect.
-            return "Rule " + describe(violation.rule()) + " at '" + violation.path()
-                    + "' rejects the value '" + violation.actualValue() + "' in use: "
-                    + violation.defaultMessage() + ". Set it in the file, or relax the rule on " + member + ".";
-        }
-        return describe(violation.rule()) + " on " + member + " ('" + violation.path()
-                + "') rejects the field's OWN DEFAULT value " + violation.actualValue()
-                + ". This is a code defect, not user data: no config file can fix it, and every run "
-                + "reproduces it. Change the field's initializer or relax the rule.";
-    }
-
-    private static String memberOf(final RuleSite site, final Class<?> entityType) {
-        if (site == null) {
-            return entityType.getSimpleName();
-        }
-        if (site.field() != null) {
-            return site.owner().getSimpleName() + "." + site.field().getName();
-        }
-        if (site.method() != null) {
-            return site.owner().getSimpleName() + "." + site.method().getName() + "()";
-        }
-        return site.owner().getSimpleName();
     }
 
     // ==================== plumbing ====================
@@ -389,69 +329,6 @@ public final class RuleBindDriver {
             }
         }
         return current;
-    }
-
-    /**
-     * The annotation as it reads in source — {@code @Max(100)} — so a message names the constraint, not just
-     * its kind. Only members that differ from their default are shown, sorted by name, and a lone
-     * {@code value} is written bare.
-     */
-    private static String describe(final Annotation rule) {
-        if (rule == null) {
-            return "review";
-        }
-        final String name = "@" + rule.annotationType().getSimpleName();
-        final List<Method> members = new ArrayList<>();
-        for (final Method member : rule.annotationType().getDeclaredMethods()) {
-            if (member.getParameterCount() == 0 && !Modifier.isStatic(member.getModifiers())) {
-                members.add(member);
-            }
-        }
-        Collections.sort(members, BY_NAME);
-        final List<String> names = new ArrayList<>();
-        final List<String> values = new ArrayList<>();
-        for (final Method member : members) {
-            final Object value;
-            try {
-                member.setAccessible(true);
-                value = member.invoke(rule);
-            } catch (final Exception unreadable) {
-                continue;
-            }
-            if (Objects.deepEquals(value, member.getDefaultValue())) {
-                continue;
-            }
-            names.add(member.getName());
-            values.add(render(value));
-        }
-        if (names.isEmpty()) {
-            return name;
-        }
-        if (names.size() == 1 && "value".equals(names.get(0))) {
-            return name + "(" + values.get(0) + ")";
-        }
-        final StringBuilder out = new StringBuilder(name).append('(');
-        for (int i = 0; i < names.size(); i++) {
-            if (i > 0) {
-                out.append(", ");
-            }
-            out.append(names.get(i)).append('=').append(values.get(i));
-        }
-        return out.append(')').toString();
-    }
-
-    private static String render(final Object value) {
-        if (value == null || !value.getClass().isArray()) {
-            return String.valueOf(value);
-        }
-        final StringBuilder out = new StringBuilder("{");
-        for (int i = 0; i < Array.getLength(value); i++) {
-            if (i > 0) {
-                out.append(", ");
-            }
-            out.append(render(Array.get(value, i)));
-        }
-        return out.append('}').toString();
     }
 
     /** One instance that owns sites (or reviews), and what the engines found on it. */
