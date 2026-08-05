@@ -108,6 +108,7 @@ public class Config implements AutoCloseable {
     // built-in engine is attached from the start so a @ConfigRule annotation works with no setup line.
     private RuleEngine ruleEngine = AnnotationRuleEngine.INSTANCE;
     private RulePolicy rulePolicy = RulePolicy.defaults();
+    private boolean ruleComments = false;
 
     // "A rule rewrote file data": the twin of newSeededDefaults, kept apart for the same reason — a caller
     // asks "did the load fix something?" separately from "is there unsaved work?".
@@ -1488,6 +1489,26 @@ public class Config implements AutoCloseable {
 
     public RulePolicy getRulePolicy() {
         return rulePolicy;
+    }
+
+    /**
+     * Whether what the engine documents about a rule ({@code RuleEngine.describe}) is written into the file
+     * as part of the field's comment — {@code "At most 100."} under the {@code @Comment} that is already
+     * there. Off by default: a config that asks for nothing round-trips byte-identically, the same
+     * discipline the comment style follows.
+     *
+     * <p>The rule text is COMPOSED into the field's comment and written once, never appended, so repeated
+     * saves cannot grow the block. A field that carries a {@code @Comment} is written under ITS mode; a field
+     * documented only by its rules is written set-if-absent, because library text must not overwrite a
+     * comment someone wrote by hand. Returns {@code this} for chaining.
+     */
+    public Config withRuleComments(final boolean enabled) {
+        ruleComments = enabled;
+        return this;
+    }
+
+    public boolean isRuleCommentsEnabled() {
+        return ruleComments;
     }
 
     /**

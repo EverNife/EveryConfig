@@ -18,7 +18,10 @@ import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
 import br.com.finalcraft.everyconfig.core.tree.DPath;
 import br.com.finalcraft.everyconfig.rule.RuleBindDriver;
+import br.com.finalcraft.everyconfig.rule.RuleEngine;
+import br.com.finalcraft.everyconfig.rule.RuleModel;
 import br.com.finalcraft.everyconfig.rule.RulePhase;
+import br.com.finalcraft.everyconfig.rule.RuleSite;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -32,8 +35,10 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -401,7 +406,39 @@ public final class EntityBinder<T> {
                 comments.setHeader(Arrays.asList(classComment.value()));
             }
         }
-        seedFieldComments(clazz, basePath, new HashSet<Class<?>>());
+        seedFieldComments(clazz, basePath, new HashSet<Class<?>>(), ruleDescriptions(clazz, basePath));
+    }
+
+    /**
+     * What the attached engine documents about each field, keyed by the field's full path — the text
+     * {@code Config.withRuleComments(true)} asks for. Empty unless the config opted in, so a caller who
+     * never asked keeps a byte-identical file. A type or method rule is left out: neither has a key of its
+     * own to document.
+     */
+    private Map<String, List<String>> ruleDescriptions(final Class<?> clazz, final String basePath) {
+        final RuleEngine engine = config.getRuleEngine();
+        if (!config.isRuleCommentsEnabled() || engine == RuleEngine.NONE
+                || !TypeFamily.isUserPojoType(clazz) || !RuleModel.hasRules(clazz)) {
+            return Collections.emptyMap();
+        }
+        final Map<String, List<String>> byPath = new HashMap<>();
+        for (final RuleSite site : RuleModel.of(clazz, engine.selector())) {
+            if (site.kind() != RuleSite.Kind.FIELD) {
+                continue;
+            }
+            final List<String> described = engine.describe(site);
+            if (described.isEmpty()) {
+                continue;
+            }
+            final String path = DPath.join(basePath, site.path());
+            List<String> lines = byPath.get(path);
+            if (lines == null) {
+                lines = new ArrayList<>();
+                byPath.put(path, lines);
+            }
+            lines.addAll(described);
+        }
+        return byPath;
     }
 
     /**
@@ -413,15 +450,21 @@ public final class EntityBinder<T> {
      * added on entry and removed on exit, so a self-referential type stops recursing at its first recurrence
      * while a diamond (the same type under two sibling fields) is still seeded on both branches. The descent
      * uses the DECLARED field type, so a runtime subtype's own {@code @Comment}s are not seeded.
+     *
+     * <p>{@code ruleDescriptions} carries what the rules at each path document (empty unless the config asked
+     * for it): it is composed into the field's text and written in the SAME single call, because appending to
+     * a comment an OVERRIDE re-stamps on every save would make the block grow forever.
      */
-    private void seedFieldComments(final Class<?> clazz, final String basePath, final Set<Class<?>> onPath) {
+    private void seedFieldComments(final Class<?> clazz, final String basePath, final Set<Class<?>> onPath,
+                                   final Map<String, List<String>> ruleDescriptions) {
         final CommentTree comments = config.getCommentTree();
         for (final Field f : BindingNames.allFields(clazz)) {
             final String fieldPath = BindingNames.sectionAwarePath(basePath, f);
             final Comment c = f.getAnnotation(Comment.class);
-            if (c != null) {
-                final String text = String.join("\n", c.value());
-                if (c.mode() == CommentMode.OVERRIDE) {
+            final List<String> described = ruleDescriptions.get(fieldPath);
+            if (c != null || described != null) {
+                final String text = composeComment(c, described);
+                if (c != null && c.mode() == CommentMode.OVERRIDE) {
                     comments.setComment(fieldPath, text, CommentType.BLOCK); // documentation stays current
                 } else {
                     comments.setDefaultComment(fieldPath, text, CommentType.BLOCK); // user-edited comment wins
@@ -432,10 +475,22 @@ public final class EntityBinder<T> {
                 continue; // a @Section field's value relocates whole; its type is not descended
             }
             if (TypeFamily.isUserPojoType(f.getType()) && onPath.add(f.getType())) {
-                seedFieldComments(f.getType(), fieldPath, onPath);
+                seedFieldComments(f.getType(), fieldPath, onPath, ruleDescriptions);
                 onPath.remove(f.getType());
             }
         }
+    }
+
+    /** The field's own lines first, then what its rules document — one text, so one write. */
+    private static String composeComment(final Comment declared, final List<String> described) {
+        final List<String> lines = new ArrayList<>();
+        if (declared != null) {
+            Collections.addAll(lines, declared.value());
+        }
+        if (described != null) {
+            lines.addAll(described);
+        }
+        return String.join("\n", lines);
     }
 
     private T doBind(final T base, final JsonNode rawSource) {
