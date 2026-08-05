@@ -10,6 +10,14 @@ dependencies {
     // Primary rule vocabulary: the annotations must be on the classpath of whoever declares them.
     // Interfaces only - no Bean Validation provider is ever pulled in.
     api libs.jakarta.validation
+
+    // ---- Tests ----
+    testImplementation libs.junit.jupiter.api
+    testRuntimeOnly libs.junit.jupiter.engine
+
+    // The codec matrix itself: the same harness the core contract runs on, so a rule is proven on all four
+    // formats rather than on the one this module happened to pick.
+    testImplementation testFixtures(project(':core'))
 }
 
 publishing {

@@ -326,6 +326,13 @@ public final class RuleBindDriver {
                     + "' rejects the file value '" + violation.actualValue()
                     + "'. Fix the value in the file, or relax the rule on " + member + ".";
         }
+        if (violation.severity() != null) {
+            // The engine chose this severity itself, so it already knows what an absent value means here -
+            // a rule that fires BECAUSE the file is silent is asking for the file, not reporting a defect.
+            return "Rule " + describe(violation.rule()) + " at '" + violation.path()
+                    + "' rejects the value '" + violation.actualValue() + "' in use: "
+                    + violation.defaultMessage() + ". Set it in the file, or relax the rule on " + member + ".";
+        }
         return describe(violation.rule()) + " on " + member + " ('" + violation.path()
                 + "') rejects the field's OWN DEFAULT value " + violation.actualValue()
                 + ". This is a code defect, not user data: no config file can fix it, and every run "
