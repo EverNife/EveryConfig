@@ -14,8 +14,9 @@ import java.util.List;
  * {@code Config} and the raw tree via {@link ConfigSection#getConfig()}) and the {@link LoadIssue}s collected
  * for the bind.
  *
- * <p>{@link #issues()} is populated only during {@code @PostLoad} — the one phase where a bind has produced
- * issues; it is an empty list for the pre-load and the save phases.
+ * <p>{@link #issues()} carries whatever the bind found wrong: it is populated during {@code @PostLoad} — a
+ * value that would not convert, a rule that rejected one — and during {@code @PostSave} when writing broke a
+ * rule. One channel in both directions. The pre phases see an empty list: nothing has been examined yet.
  *
  * @see ConfigLifecycle
  * @see br.com.finalcraft.everyconfig.annotation.PreLoad
@@ -40,7 +41,8 @@ public final class ConfigContext {
         return section;
     }
 
-    /** Issues collected for the bind — populated only during {@code @PostLoad}; empty otherwise. */
+    /** What the bind found wrong — coercion and rule issues alike; populated at {@code @PostLoad} and, for a
+     *  rule broken on the way out, at {@code @PostSave}. Empty during the pre phases. */
     public List<LoadIssue> issues() {
         return issues;
     }

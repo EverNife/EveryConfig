@@ -3,8 +3,6 @@ package br.com.finalcraft.everyconfig.rule;
 import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import org.jetbrains.annotations.Nullable;
 
-import java.lang.reflect.Field;
-
 /**
  * What an engine sees for ONE site during one bind: the declaration, the value that landed there, where it
  * came from, and the config around it. Immutable apart from {@link #correct(Object)}, which is an explicit
@@ -21,6 +19,9 @@ public final class RuleContext {
     private final RuleReport report;
     private final RulePolicy policy;
     private final boolean strictCoercion;
+
+    private boolean corrected;
+    private Object correctedValue;
 
     RuleContext(final RuleSite site, final RulePhase phase, final Object value, final Object owner,
                 final ValueSource source, final ConfigSection section, final RuleReport report,
@@ -86,27 +87,40 @@ public final class RuleContext {
     }
 
     /**
-     * Rewrite this site's field on the owning instance. Returns whether it was applied: false when the
-     * policy has corrections switched off, when the site has no field to set (a type or method rule), or
-     * when the field rejects the value.
+     * Rewrite this site's value to {@code newValue}. Returns whether it was applied: false when the policy
+     * has corrections switched off, when the site has no field to set (a type or method rule), or when the
+     * field rejects the value.
      *
-     * <p>Correcting does not silence: the handler still reports the violation, so what changed is visible
-     * to the caller.
+     * <p>The field is written here and the bind carries the fix as far as it has to go. Correcting a value
+     * the file supplied also writes the canonical tree at the site's path and flags
+     * {@code Config.hasRuleFixes()}: the tree, not the entity, is what a later read and a {@code save()}
+     * answer from, so leaving it holding the rejected value would undo the fix twice over. Correcting
+     * anything else touches only the entity — a value the file never carried is the seeding's business, and
+     * on the way out the projection has not happened yet, so the merge picks the new value up by itself. The
+     * FILE changes only on an explicit save.
+     *
+     * <p>Correcting does not silence: the handler still reports the violation, so what changed is visible to
+     * the caller instead of a value quietly differing from the file.
      */
     public boolean correct(@Nullable final Object newValue) {
         if (!policy.applyCorrections()) {
             return false;
         }
-        final Field target = site.field();
-        if (target == null || owner == null) {
+        if (!site.writeInto(owner, newValue)) {
             return false;
         }
-        try {
-            target.setAccessible(true);
-            target.set(owner, newValue);
-            return true;
-        } catch (final Exception notSettable) {
-            return false;
-        }
+        corrected = true;
+        correctedValue = newValue;
+        return true;
+    }
+
+    /** Whether {@link #correct(Object)} rewrote the field, so the bind knows a fix has to travel further. */
+    boolean corrected() {
+        return corrected;
+    }
+
+    /** The value the last {@link #correct(Object)} wrote; meaningful only when {@link #corrected()}. */
+    Object correctedValue() {
+        return correctedValue;
     }
 }

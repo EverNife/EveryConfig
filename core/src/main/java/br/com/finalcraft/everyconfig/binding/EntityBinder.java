@@ -17,6 +17,8 @@ import br.com.finalcraft.everyconfig.core.coerce.TypeFamily;
 import br.com.finalcraft.everyconfig.core.comment.CommentTree;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
 import br.com.finalcraft.everyconfig.core.tree.DPath;
+import br.com.finalcraft.everyconfig.rule.RuleBindDriver;
+import br.com.finalcraft.everyconfig.rule.RulePhase;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -201,13 +203,17 @@ public final class EntityBinder<T> {
     }
 
     private T doRead(final String path, final T base) {
-        JsonNode node = config.getNode(path);
-        if (node == null) {
-            node = mapper.getNodeFactory().objectNode();
-        }
+        final JsonNode loaded = config.getNode(path);
+        final JsonNode node = loaded != null ? loaded : mapper.getNodeFactory().objectNode();
         final ConfigSection section = config.getConfigSection(path);
         LifecycleInvoker.fire(base, LifecycleInvoker.Phase.PRE_LOAD, section, Collections.<LoadIssue>emptyList());
         final T result = doBind(base, node);
+        // Rules judge the bound entity, so they run after the bind and before anything is told the outcome:
+        // a @PostLoad and a LoadIssueAware then see coercion and rule issues in one list.
+        collect(applyRules(result, RulePhase.VALIDATE, section, loaded));
+        if (result instanceof LoadIssueAware) {
+            ((LoadIssueAware) result).setLoadIssues(lastIssues);
+        }
         LifecycleInvoker.fire(result, LifecycleInvoker.Phase.POST_LOAD, section, lastIssues);
         // Nested @PostLoad: the mapper bound the whole graph, so descendants (fields, Map values, collection
         // elements) never fired. Walk the bound result and fire each hook-bearing node at its sub-path. No
@@ -217,6 +223,25 @@ public final class EntityBinder<T> {
                     LifecycleInvoker.Phase.POST_LOAD, lastIssues);
         }
         return result;
+    }
+
+    /** Apply the config's rules to {@code entity} at {@code section} and return what they found.
+     *  {@code loaded} is the subtree as the file carried it (null when it carried nothing), which is what
+     *  tells a file value apart from the entity's own default; there is no such tree on the write side. */
+    private List<LoadIssue> applyRules(final Object entity, final RulePhase phase, final ConfigSection section,
+                                       final JsonNode loaded) {
+        return RuleBindDriver.applyRules(entity, type.getRawClass(), phase, section, loaded, mapper,
+                options.coercion() == BindOptions.Coercion.STRICT);
+    }
+
+    /** Append rule issues to the ones coercion collected, keeping {@link #lastIssues} one immutable list. */
+    private void collect(final List<LoadIssue> ruleIssues) {
+        if (ruleIssues.isEmpty()) {
+            return;
+        }
+        final List<LoadIssue> all = new ArrayList<>(lastIssues);
+        all.addAll(ruleIssues);
+        lastIssues = Collections.unmodifiableList(all);
     }
 
     /** Whether the graph walk is worth running for a bound/serialized value: a container type may hold
@@ -243,6 +268,9 @@ public final class EntityBinder<T> {
             LifecycleGraphWalker.fireDescendants(config, pojo, section.getPath(),
                     LifecycleInvoker.Phase.PRE_SAVE, Collections.<LoadIssue>emptyList());
         }
+        // Rules run on the final state of the POJO and before the projection, so a normalization they apply
+        // is what gets written; what they found travels to the post-save hooks.
+        final List<LoadIssue> saveIssues = applyRules(pojo, RulePhase.NORMALIZE, section, null);
         final JsonNode existing = config.getNode(path);
         final ObjectNode target;
         if (existing instanceof ObjectNode) {
@@ -252,12 +280,12 @@ public final class EntityBinder<T> {
             config.setValue(path, target);
         }
         mergeAndSeed(pojo, target, path == null ? "" : path);
-        LifecycleInvoker.fire(pojo, LifecycleInvoker.Phase.POST_SAVE, section, Collections.<LoadIssue>emptyList());
+        LifecycleInvoker.fire(pojo, LifecycleInvoker.Phase.POST_SAVE, section, saveIssues);
         // Nested @PostSave AFTER the merge: the sub-path is now materialized, so a nested post-save that
         // writes through context.section() lands where the entity actually is.
         if (walk) {
             LifecycleGraphWalker.fireDescendants(config, pojo, section.getPath(),
-                    LifecycleInvoker.Phase.POST_SAVE, Collections.<LoadIssue>emptyList());
+                    LifecycleInvoker.Phase.POST_SAVE, saveIssues);
         }
     }
 
@@ -424,9 +452,6 @@ public final class EntityBinder<T> {
             throw new BindException("failed to bind tree to " + type, e);
         }
         lastIssues = Collections.unmodifiableList(issues);
-        if (result instanceof LoadIssueAware) {
-            ((LoadIssueAware) result).setLoadIssues(lastIssues);
-        }
         return result;
     }
 

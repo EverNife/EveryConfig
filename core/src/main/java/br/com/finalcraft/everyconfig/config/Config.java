@@ -27,6 +27,10 @@ import br.com.finalcraft.everyconfig.core.comment.CommentType;
 import br.com.finalcraft.everyconfig.core.tree.DPath;
 import br.com.finalcraft.everyconfig.io.watcher.Watcher;
 import br.com.finalcraft.everyconfig.io.watcher.Fingerprint;
+import br.com.finalcraft.everyconfig.rule.AnnotationRuleEngine;
+import br.com.finalcraft.everyconfig.rule.RuleBindDriver;
+import br.com.finalcraft.everyconfig.rule.RuleEngine;
+import br.com.finalcraft.everyconfig.rule.RulePolicy;
 import br.com.finalcraft.everyconfig.selfdescribe.CompactElementCodec;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -99,6 +103,15 @@ public class Config implements AutoCloseable {
     // In-memory RENDERING policy, the spacing twin of the pins above: re-asserted on every save, survives a
     // reload(), never written to the file. Held apart from the comment overlay so a reload cannot drop it.
     private CommentStyle commentStyle = CommentStyle.NONE;
+
+    // In-memory rule policy, of the same family: what checks a bind runs and what a violation costs. The
+    // built-in engine is attached from the start so a @ConfigRule annotation works with no setup line.
+    private RuleEngine ruleEngine = AnnotationRuleEngine.INSTANCE;
+    private RulePolicy rulePolicy = RulePolicy.defaults();
+
+    // "A rule rewrote file data": the twin of newSeededDefaults, kept apart for the same reason — a caller
+    // asks "did the load fix something?" separately from "is there unsaved work?".
+    private boolean ruleFixes = false;
 
     public Config() {
         this(JsonNodeFactory.instance.objectNode(), new CommentTree(), KeyOrder.empty());
@@ -266,6 +279,7 @@ public class Config implements AutoCloseable {
             if (!coll.isEmpty() && LifecycleGraphWalker.anyMayHaveHooks(coll)) {
                 if (isCompactElementCollection(coll)) {
                     LifecycleGraphWalker.warnCompactHooks(firstElementType(coll));
+                    RuleBindDriver.warnCompactRules(ruleEngine, firstElementType(coll));
                     writeValueImpl(path, value, merge);
                     return;
                 }
@@ -739,7 +753,9 @@ public class Config implements AutoCloseable {
         final CompactElementCodec<T> compact =
                 (CompactElementCodec<T>) codec.compactElementResolver().resolve(elementType);
         if (compact != null) {
-            LifecycleGraphWalker.warnCompactHooks(elementType); // a compact element has no sub-path for its hooks
+            // a compact element has no sub-path, so neither its hooks nor its rules have anywhere to bind
+            LifecycleGraphWalker.warnCompactHooks(elementType);
+            RuleBindDriver.warnCompactRules(ruleEngine, elementType);
             return ElementStringList.fromArray(node, elementType, mapper, compact);
         }
         final List<T> out = new ArrayList<>();
@@ -1441,6 +1457,68 @@ public class Config implements AutoCloseable {
 
     public void clearNewSeededDefaults() {
         newSeededDefaults = false;
+    }
+
+    // ==================== semantic rules ====================
+
+    /**
+     * Attaches the engine that applies this config's rules during a bind; {@code null} means
+     * {@link RuleEngine#NONE}, which switches the whole subsystem — reviews included — off by identity.
+     *
+     * <p>{@link AnnotationRuleEngine} is attached out of the box, which is what makes a self-contained
+     * {@code @ConfigRule} annotation work with no setup line; a type that declares none pays one cached
+     * lookup per bind. Like a pin or a comment style this is a session policy: it lives in memory, survives a
+     * {@link #reload()}, and is never written to the file. Returns {@code this} for chaining.
+     */
+    public Config withRuleEngine(final RuleEngine engine) {
+        ruleEngine = engine != null ? engine : RuleEngine.NONE;
+        return this;
+    }
+
+    public RuleEngine getRuleEngine() {
+        return ruleEngine;
+    }
+
+    /** Sets what a rule violation costs on this config; {@code null} restores {@link RulePolicy#defaults()}.
+     *  Returns {@code this} for chaining. */
+    public Config withRulePolicy(final RulePolicy policy) {
+        rulePolicy = policy != null ? policy : RulePolicy.defaults();
+        return this;
+    }
+
+    public RulePolicy getRulePolicy() {
+        return rulePolicy;
+    }
+
+    /**
+     * Whether a rule corrected a file value in the tree since the last {@link #clearRuleFixes()} — the
+     * sibling of {@link #hasNewSeededDefaults()}, and just as separate from {@code dirty}. A load never
+     * touches the file, so this is how a caller decides whether what the load fixed is worth persisting:
+     *
+     * <pre>{@code
+     * final MyConfig cfg = config.loadAs(MyConfig.class, codec);
+     * if (config.hasRuleFixes()) {
+     *     config.save();
+     * }
+     * }</pre>
+     */
+    public boolean hasRuleFixes() {
+        return ruleFixes;
+    }
+
+    public void clearRuleFixes() {
+        ruleFixes = false;
+    }
+
+    /**
+     * Writes {@code value} at {@code path} as a rule correction and flags {@link #hasRuleFixes()}. The bind
+     * calls this when a rule rewrites a value that came from the file: correcting only the entity would leave
+     * the canonical tree holding the value that was just rejected, so the next {@link #getValue} would return
+     * it and a {@link #save()} would write it straight back.
+     */
+    public void applyRuleFix(final String path, final JsonNode value) {
+        setValue(path, value);
+        ruleFixes = true;
     }
 
     // ==================== in-memory + codec selection ====================

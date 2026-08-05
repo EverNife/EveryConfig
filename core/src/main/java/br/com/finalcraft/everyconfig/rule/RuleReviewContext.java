@@ -95,16 +95,14 @@ public final class RuleReviewContext {
         return raise(relativePath, defaultMessage, RulePolicy.Severity.THROW);
     }
 
-    /** The violations that survived review, in order: the surviving originals as they now stand, then the
-     *  ones the entity raised. */
-    List<RuleViolation> decided() {
-        final List<RuleViolation> out = new ArrayList<>(outcome.size());
-        for (final RuleViolation v : outcome) {
-            if (v != null) {
-                out.add(v);
-            }
-        }
-        return out;
+    /**
+     * What each slot decided, positionally: the violation as it now stands, or null once accepted. The first
+     * {@link #violations()}{@code .size()} slots are the engines' findings, in the order they were handed
+     * over — so the bind can pair a decided violation back with the site it came from — and the ones the
+     * entity raised follow, which have no site behind them.
+     */
+    List<RuleViolation> outcomes() {
+        return outcome;
     }
 
     /** The corrections the review asked for, in the order it asked. */
@@ -137,7 +135,8 @@ public final class RuleReviewContext {
         return -1;
     }
 
-    /** A value the review wants written at a violation's site. */
+    /** A value the review wants written at a violation's site; the violation is the one the review was
+     *  handed, so the bind matches it back by identity. */
     static final class Correction {
 
         private final RuleViolation violation;

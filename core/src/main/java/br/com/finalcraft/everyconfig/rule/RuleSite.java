@@ -147,6 +147,35 @@ public final class RuleSite {
         return ownerChain;
     }
 
+    /** The instance that declares this site, reached from {@code root} through the owner chain — {@code root}
+     *  itself at the top level. Null when an intermediate owner is null: there is no value to examine there,
+     *  and the missing owner is the level above's business. */
+    Object ownerIn(final Object root) {
+        Object instance = root;
+        for (final Field link : ownerChain) {
+            if (instance == null) {
+                return null;
+            }
+            instance = read(link, instance);
+        }
+        return instance;
+    }
+
+    /** Write {@code value} into this site's field on {@code owner}. False when there is no field to write —
+     *  a type or method rule — or the field rejects the value. */
+    boolean writeInto(final Object owner, final Object value) {
+        if (field == null || owner == null) {
+            return false;
+        }
+        try {
+            field.setAccessible(true);
+            field.set(owner, value);
+            return true;
+        } catch (final Exception notSettable) {
+            return false;
+        }
+    }
+
     private Object resolveDefaultValue() {
         Object instance = defaultInstanceOf(entryType);
         for (final Field link : ownerChain) {
