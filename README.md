@@ -28,6 +28,7 @@ data, never clobbers it.
 - [The dynamic API](#the-dynamic-api)
 - [Default values & comments](#default-values--comments)
 - [Typed entity binding](#typed-entity-binding)
+- [Semantic rules](#semantic-rules)
 - [Self-describing types](#self-describing-types)
 - [`@KeyIndex` collections](#keyindex-collections)
 - [Lifecycle, reload & watching](#lifecycle-reload--watching)
@@ -57,6 +58,10 @@ state is a Jackson `ObjectNode` tree that every format reads into and writes out
   keys a user added by hand survive and the tree wins on conflict.
 - **🌱 Self-healing defaults.** `getOrSetValueIfAbsent(path, def, comment)` seeds a value *and* its documentation
   only when absent, so it is safe to call on every startup.
+- **📐 Rules that mean something.** A field can declare more than its type: `@Min(0) @Max(100)` on a
+  percentage, `@Explicit` on a token an operator must fill in. Rules run inside the bind and report through
+  the channel your `@PostLoad` already reads; the same declarations feed a settings screen with no `Config`
+  in sight, and can write themselves into the file as comments.
 - **🛟 Corruption-proof startup.** A malformed file is backed up to `.bak` and the config starts empty — a
   broken config never blocks boot.
 - **☕ Java 8 runtime.** Bytecode targets Java 8 while the source is written in modern Java; the dependency set
@@ -80,7 +85,13 @@ state is a Jackson `ObjectNode` tree that every format reads into and writes out
 
 ## Install
 
-EveryConfig is a **thin `java-library` jar**: Jackson is a normal transitive dependency, not relocated.
+EveryConfig is a **thin `java-library` jar**: Jackson is a normal transitive dependency, not relocated. Two
+artifacts, released in lockstep:
+
+| Artifact | What it is |
+|---|---|
+| `everyconfig-core` | the whole library — tree, codecs, comment overlay, typed binding, and the rule seam with no rule in it |
+| `everyconfig-rules` | **optional** — the rule vocabulary: jakarta's constraints read natively, plus `@Explicit`/`@OneOf`/`@Unique` |
 
 **Gradle**
 
@@ -92,6 +103,7 @@ repositories {
 
 dependencies {
     implementation 'br.com.finalcraft.everyconfig:everyconfig-core:1.1.0'
+    implementation 'br.com.finalcraft.everyconfig:everyconfig-rules:1.1.0'   // optional
 }
 ```
 
@@ -110,8 +122,9 @@ dependencies {
 </dependency>
 ```
 
-> `everyconfig-rules` (`br.com.finalcraft.everyconfig:everyconfig-rules:1.1.0`) is an optional companion
-> artifact; `everyconfig-core` is the whole library on its own.
+> **Upgrading from 1.0.1?** The old coordinate `br.com.finalcraft:EveryConfig` no longer exists. Because the
+> coordinate CHANGED, dependency resolution will not deduplicate it — a build that still pulls it transitively
+> ends up with duplicated classes. Remove or exclude it everywhere. See the [CHANGELOG](CHANGELOG.md).
 
 > **Bukkit/Spigot consumers:** a plugin that bundles EveryConfig should run its own `shadowJar` and **relocate
 > `com.fasterxml.jackson` and `org.yaml.snakeyaml`** in *its* shade step. Relocation policy belongs at the leaf
@@ -322,6 +335,71 @@ DbConfig db = cfg.loadAs(DbConfig.class, codec);    // lenient by default
 
 ---
 
+## Semantic rules
+
+A type says what a value *is*; a rule says what it must **mean**. Declare the fact on the field, attach the
+consumer where the config is opened, and choose the policy per config — three axes that never entangle.
+
+```java
+public class ServerConfig {
+
+    @Comment("Port the service binds to.")
+    @Min(1) @Max(65535)
+    private int port = 25565;
+
+    @Comment("Chance of a drop, in percent.")
+    @Min(0) @Max(100)
+    private double dropChance = 25.0;
+
+    @Comment("Auth token. Fill it before the service will start.")
+    @Explicit @NotBlank
+    private String token = "";
+
+    @OneOf(value = {"MONGO", "SQL", ""}, ignoreCase = true)
+    private String dbType = "";
+
+    @Unique
+    private List<String> enabledWorlds = new ArrayList<>();
+}
+```
+
+```java
+Config config = Config.open(path, codec)
+        .withRuleEngine(StandardRules.engine())                      // jakarta + @Explicit/@OneOf/@Unique
+        .withRulePolicy(RulePolicy.defaults().withCorrections(true));
+
+ServerConfig cfg = config.loadAs(ServerConfig.class, codec);         // violations become LoadIssues
+if (config.hasRuleFixes()) {
+    config.save();                                                   // persist what the load repaired
+}
+```
+
+- **They run inside the bind**, on the channel that already exists: a violation becomes a `LoadIssue` of
+  `Kind.RULE`, so a `@PostLoad` (or `LoadIssueAware`, or `loadAsResult`) written before rules existed sees
+  them without one line of change.
+- **The policy decides the cost.** `REPORT` / `LOG` / `THROW`. With no policy declared, a value from the FILE
+  follows the bind's `Coercion` (strict throws, lenient reports); a value from the entity's own DEFAULT throws
+  out of the box — that is a code defect no config file can fix, and the message says so.
+- **`@ConfigRule` is the whole SPI.** Mark your own annotation with it, point it at a handler, and it fires
+  with no setup line — the built-in engine is attached from the start.
+- **The entity gets the last word.** A `@RuleReview` method (or the `RuleReviewer` interface) runs after the
+  engines and before the policy: it can `accept` a magic word the annotation could never list, `override` a
+  severity, `correct` the value, or `fail` on logic of its own — including logic that reads *another* config.
+- **The same declarations build a screen.** `RuleModel.of(type, selector)` returns every rule of a type with
+  the exact FILE path its value lands at, its `@Comment` and its default — no `Config`, no `ObjectMapper`, no
+  file touched.
+- **And they can document themselves.** `withRuleComments(true)` folds each rule's own text into the comment
+  at its path, composed into the `@Comment` already there.
+
+Jakarta's constraints are read **natively** — the annotations only, no provider and no Bean Validation
+implementation anywhere. Two declared divergences: `null` passes everything except presence
+(`@NotNull`/`@NotEmpty`/`@NotBlank`), and the range constraints accept every numeric type, `double` included,
+compared in `BigDecimal`.
+
+**→ Deep dive: [Semantic Rules](https://github.com/EverNife/EveryConfig/wiki/Semantic-Rules)**
+
+---
+
 ## Self-describing types
 
 A custom type can carry its own config codec, so it round-trips with **no central registration** — the shared
@@ -451,15 +529,18 @@ cfg.changeCodec(new TomlCodec());    // switch the format used by every subseque
 ```bash
 export JAVA_HOME=/path/to/jdk-25      # PowerShell: $env:JAVA_HOME = "C:\path\to\jdk-25"
 
-./gradlew build                       # compile + run all tests on Java 25
-./gradlew test -PtestJdk=8            # run the suite on the Java 8 runtime floor (also: 11, 17, 21)
-./gradlew test -Pstress              # opt-in stress & benchmark suite -> build/stress-report/<codec>.md
+./gradlew build                                        # compile + run every module's tests on Java 25
+./gradlew :core:test :rules:test -PtestJdk=8 --rerun-tasks   # the Java 8 runtime floor (also: 11, 17, 21)
+./gradlew test -Pstress                                # opt-in stress & benchmark -> build/stress-report/<codec>.md
 ```
 
-> The codec-agnostic contract (`AbstractConfigTest`) runs the same body against all four codecs, so a
-> behavior is validated identically on YAML, JSON, TOML and JSONC. Residual files are written under
-> `build/test-residuals/` for inspection. The `-Pstress` suite (skipped by default) measures throughput,
-> the 100k-entity scale, concurrency and the lock-cost trade-off.
+> **One harness, every codec.** `CodecMatrixTest` (a `testFixtures` source set of `:core`) carries the codec
+> hooks, the capability flags and the residual handling; each cross-codec contract extends it and runs its
+> whole body against all four formats — `AbstractConfigTest` for the config contract, `AbstractRulesetTest`
+> for the rule vocabulary, `AbstractStressTest` for throughput. Residual files land under
+> `build/test-residuals/<group>/` for inspection. `-PtestJdk` does not invalidate the test task's up-to-date
+> check, so `--rerun-tasks` is required; the `-Pstress` suite (skipped by default) measures throughput, the
+> 100k-entity scale, concurrency and the lock-cost trade-off.
 
 **→ Deep dives: [Building from Source](https://github.com/EverNife/EveryConfig/wiki/Building-from-Source) ·
 [Running the Tests](https://github.com/EverNife/EveryConfig/wiki/Running-the-Tests) ·
@@ -471,15 +552,24 @@ export JAVA_HOME=/path/to/jdk-25      # PowerShell: $env:JAVA_HOME = "C:\path\to
 
 ```
 EveryConfig/
-└── core/src/main/java/br/com/finalcraft/everyconfig/
-    ├── config/                  # Config (dynamic API + lifecycle) + config.section (ConfigSection)
-    ├── core/                    # the canonical model: core.tree (DPath), core.coerce (NodeCoercion),
-    │                            #   core.comment (CommentTree), KeyOrder
-    ├── codec/                   # Codec SPI, CommentFidelity, registry, mapper profiles
-    │   └── jackson/             # JsonCodec, YamlCodec, TomlCodec, JsoncCodec
-    ├── io/                      # file I/O: atomic write, .bak, poll watcher, async executor
-    ├── binding/                 # typed binding: EntityBinder + binding.schema, binding.merge, binding.introspect
-    └── annotation/              # @Key, @Comment, @Section, @KeyIndex, @PostLoad (+ KeyTransformCase, CommentMode)
+├── core/                        # -> everyconfig-core
+│   └── src/main/java/br/com/finalcraft/everyconfig/
+│       ├── config/              # Config (dynamic API + lifecycle) + config.section (ConfigSection)
+│       ├── core/                # the canonical model: core.tree (DPath), core.coerce (NodeCoercion),
+│       │                        #   core.comment (CommentTree), KeyOrder
+│       ├── codec/               # Codec SPI, CommentFidelity, registry, mapper profiles
+│       │   └── jackson/         # JsonCodec, YamlCodec, TomlCodec, JsoncCodec
+│       ├── io/                  # file I/O: atomic write, .bak, poll watcher, async executor
+│       ├── binding/             # typed binding: EntityBinder + binding.schema, binding.merge, binding.introspect
+│       ├── rule/                # the rule SEAM and not one rule: @ConfigRule, RuleEngine, RuleModel,
+│       │                        #   RulePolicy, @RuleReview, RuleBindDriver
+│       ├── selfdescribe/        # the compact list-element SPI
+│       └── annotation/          # @Key, @Comment, @Section, @KeyIndex, @PostLoad (+ KeyTransformCase, CommentMode)
+└── rules/                       # -> everyconfig-rules (optional)
+    └── src/main/java/br/com/finalcraft/everyconfig/ruleset/
+        ├── (root)               # @Explicit, @OneOf (+ OneOfSource), @Unique, StandardRules
+        ├── jakarta/             # JakartaRules + the 22 constraint handlers, grouped by kind
+        └── support/             # shared helpers both vocabularies use
 ```
 
 **→ Deep dive: [Project Layout](https://github.com/EverNife/EveryConfig/wiki/Project-Layout)**
@@ -493,7 +583,8 @@ EveryConfig/
   17, 21 and 25.
 - **Dependencies.** Jackson `databind` + `dataformat-yaml`/`-toml` are on the public `api` surface (the tree
   and codecs expose Jackson types); `jsr310` and `jdk8` (java.time / `Optional`) are runtime. The library's
-  major version tracks Jackson's major (`1.x` ⟷ Jackson 2.x).
+  major version tracks Jackson's major (`1.x` ⟷ Jackson 2.x). `everyconfig-rules` adds exactly one:
+  `jakarta.validation-api` (an interfaces-only jar — never a Bean Validation provider).
 - **Serialization.** Bound entities must be Jackson-serializable (a no-arg constructor plus accessors/fields,
   or appropriate Jackson annotations).
 - **No EverNifeCore, no Bukkit/Spigot API** — pure Java.
