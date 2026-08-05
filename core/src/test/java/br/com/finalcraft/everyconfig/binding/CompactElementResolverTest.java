@@ -3,7 +3,7 @@ package br.com.finalcraft.everyconfig.binding;
 import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.jackson.YamlCodec;
 import br.com.finalcraft.everyconfig.config.Config;
-import br.com.finalcraft.everyconfig.config.data.Dtos;
+import br.com.finalcraft.everyconfig.testdata.Dtos;
 import br.com.finalcraft.everyconfig.selfdescribe.CompactElementCodec;
 import br.com.finalcraft.everyconfig.selfdescribe.CompactElementResolver;
 import org.junit.jupiter.api.DisplayName;

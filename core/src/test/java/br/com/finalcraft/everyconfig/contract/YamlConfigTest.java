@@ -1,10 +1,9 @@
-package br.com.finalcraft.everyconfig.config.modules.yaml;
+package br.com.finalcraft.everyconfig.contract;
 
 import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.jackson.YamlCodec;
 import br.com.finalcraft.everyconfig.config.Config;
-import br.com.finalcraft.everyconfig.config.modules.AbstractConfigTest;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Order;

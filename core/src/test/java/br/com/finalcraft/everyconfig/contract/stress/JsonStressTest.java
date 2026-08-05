@@ -1,4 +1,4 @@
-package br.com.finalcraft.everyconfig.config.stress;
+package br.com.finalcraft.everyconfig.contract.stress;
 
 import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.jackson.JsonCodec;

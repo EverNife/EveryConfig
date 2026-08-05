@@ -3,6 +3,11 @@ base {
     archivesName = 'everyconfig-core'
 }
 
+// src/testFixtures holds the codec-matrix harness every cross-codec suite runs on, so :rules can run the
+// same matrix instead of copying it. It is build-time only - the variants are skipped below so the
+// published component stays the thin library jar.
+apply plugin: 'java-test-fixtures'
+
 // Toolchain (Java 25), the dual-target compileJava override (modern source syntax -> Java 8
 // bytecode via Jabel), Lombok, the JUnit Platform launcher and the publishing repository are
 // configured centrally in the root build.gradle.
@@ -21,6 +26,9 @@ dependencies {
     // ---- Tests ----
     testImplementation libs.junit.jupiter.api
     testRuntimeOnly libs.junit.jupiter.engine
+
+    // The harness declares JUnit lifecycle hooks, so its consumers compile against JUnit through it.
+    testFixturesApi libs.junit.jupiter.api
 }
 
 publishing {
@@ -31,3 +39,8 @@ publishing {
         }
     }
 }
+
+// The test fixtures are a build-time harness, not part of the library: keep them out of the published
+// component so no consumer resolves a -test-fixtures jar of everyconfig-core.
+components.java.withVariantsFromConfiguration(configurations.testFixturesApiElements) { skip() }
+components.java.withVariantsFromConfiguration(configurations.testFixturesRuntimeElements) { skip() }

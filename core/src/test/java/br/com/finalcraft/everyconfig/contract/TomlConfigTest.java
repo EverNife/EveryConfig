@@ -1,11 +1,10 @@
-package br.com.finalcraft.everyconfig.config.modules.toml;
+package br.com.finalcraft.everyconfig.contract;
 
 import br.com.finalcraft.everyconfig.codec.Codec;
 import br.com.finalcraft.everyconfig.codec.CommentFidelity;
 import br.com.finalcraft.everyconfig.codec.jackson.TomlCodec;
 import br.com.finalcraft.everyconfig.config.Config;
-import br.com.finalcraft.everyconfig.config.data.Dtos;
-import br.com.finalcraft.everyconfig.config.modules.AbstractConfigTest;
+import br.com.finalcraft.everyconfig.testdata.Dtos;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;

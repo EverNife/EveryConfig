@@ -3,7 +3,7 @@ package br.com.finalcraft.everyconfig.binding.merge;
 import br.com.finalcraft.everyconfig.binding.BindException;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.codec.jackson.JsonCodec;
-import br.com.finalcraft.everyconfig.config.data.Dtos;
+import br.com.finalcraft.everyconfig.testdata.Dtos;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;

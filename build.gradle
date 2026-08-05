@@ -104,6 +104,12 @@ configure([project(':core'), project(':rules')]) {
     compileTestJava {
         options.release = 8
     }
+
+    // The shared test harness (:core src/testFixtures) is compiled by the suites, so it lives on the same
+    // floor; the task only exists where the java-test-fixtures plugin is applied.
+    tasks.matching { it.name == 'compileTestFixturesJava' }.configureEach {
+        options.release = 8
+    }
 }
 
 // ======================================================================

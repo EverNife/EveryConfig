@@ -1,7 +1,7 @@
 package br.com.finalcraft.everyconfig.config.section;
 
 import br.com.finalcraft.everyconfig.config.Config;
-import br.com.finalcraft.everyconfig.config.data.Dtos;
+import br.com.finalcraft.everyconfig.testdata.Dtos;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;

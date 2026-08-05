@@ -1,4 +1,4 @@
-package br.com.finalcraft.everyconfig.config.data;
+package br.com.finalcraft.everyconfig.testdata;
 
 import br.com.finalcraft.everyconfig.annotation.Comment;
 import br.com.finalcraft.everyconfig.annotation.CommentMode;
