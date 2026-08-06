@@ -395,6 +395,28 @@ public abstract class AbstractRulesetTest extends CodecMatrixTest {
                 + "or remove it.", failure.getMessage());
     }
 
+    @Test
+    @DisplayName("[declaration] @Explicit beside a rule its own default breaks fails and names both")
+    void anExplicitDefaultTheRuleBesideItRefusesFailsWithATeachingMessage() {
+        final BindException failure = assertThrows(BindException.class,
+                () -> standard().bind(RulesetDtos.UnseedableDto.class, codec).read(""));
+        assertEquals("@Explicit on UnseedableDto.token ('token') sits beside @NotBlank, which refuses the "
+                + "field's own default ''. @Explicit asks the operator to overwrite that default in the "
+                + "file, and that same default is what a fresh file is seeded with - so there is no value "
+                + "to write and no first run that can pass. Give the field a default @NotBlank accepts, or "
+                + "drop one of the two annotations.", failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("[declaration] and a file that happens to be filled in does not hide it")
+    void theUnseedableDeclarationStillFailsWhenTheFileHasAValue() {
+        final Config filledIn = seeded("token", "a-real-token");
+
+        assertThrows(BindException.class,
+                () -> filledIn.bind(RulesetDtos.UnseedableDto.class, codec).read(""),
+                "the defect is in the code, so the one run whose file is already fine must not hide it");
+    }
+
     // ===================== review =====================
 
     @Test

@@ -20,6 +20,11 @@ import java.lang.annotation.Target;
  *
  * <p>Honest limit: seeding writes the default into the file, so after the first save the key exists and this
  * rule is satisfied. It catches the FIRST run — exactly when the warning matters — not forever.
+ *
+ * <p>It may not sit beside a content rule the field's own default breaks — {@code @Explicit @NotBlank String
+ * token = ""}. The default is what a fresh file is seeded with and what this annotation asks the operator to
+ * overwrite, so a default the neighbouring rule refuses leaves nothing to write and no first run that can
+ * pass. That combination fails on the first application, every run, with a message naming both annotations.
  */
 @Documented
 @ConfigRule(ExplicitHandler.class)

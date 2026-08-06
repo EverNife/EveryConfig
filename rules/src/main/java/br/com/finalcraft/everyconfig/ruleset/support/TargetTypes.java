@@ -52,7 +52,8 @@ public final class TargetTypes {
                 + "or remove it.");
     }
 
-    private static String member(final RuleSite site) {
+    /** The member a site sits on, as a message names it: {@code ShopSettings.apiToken}. */
+    public static String member(final RuleSite site) {
         if (site.field() != null) {
             return site.owner().getSimpleName() + "." + site.field().getName();
         }

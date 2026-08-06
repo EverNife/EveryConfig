@@ -265,6 +265,14 @@ public final class RulesetDtos {
         public int count = 3;
     }
 
+    /** A value the operator has to write down, seeded with one the rule beside it refuses. */
+    public static class UnseedableDto {
+
+        @Explicit
+        @NotBlank
+        public String token = "";
+    }
+
     /** A bound the entity itself clamps instead of only complaining about. */
     public static class ClampingReviewDto {
 
