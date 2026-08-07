@@ -45,6 +45,17 @@ public final class LoadIssue {
                 violation);
     }
 
+    /**
+     * The entry at {@code index} of the list at {@code listPath}, dropped by a lenient list read. Keyed
+     * {@code listPath[index]} so whoever reports it names the entry the file got wrong, instead of only
+     * counting how many were lost.
+     */
+    public static LoadIssue skippedListElement(final String listPath, final int index, final Object rawValue,
+                                               final Class<?> elementType, final Throwable cause) {
+        return new LoadIssue(listPath + "[" + index + "]", rawValue, elementType,
+                "cannot be read; fix or delete this entry: " + cause.getMessage());
+    }
+
     private LoadIssue(final String key, final Object rawValue, final Class<?> targetType, final String message,
                       final Kind kind, final RuleViolation violation) {
         this.key = key;

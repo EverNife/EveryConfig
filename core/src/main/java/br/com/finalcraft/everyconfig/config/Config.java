@@ -715,8 +715,10 @@ public class Config implements AutoCloseable {
 
     /**
      * As {@link #getList(String, Class)}, returning the list together with any {@link LoadIssue}s collected —
-     * the issues a bare {@link #getList} discards. The relevant case is a {@code @KeyIndex}-indexed read where
-     * an element's body id disagreed with its section key (the section key wins, the disagreement is recorded).
+     * the issues a bare {@link #getList} discards. Every entry the read leniently skipped is one issue, keyed
+     * {@code path[index]} so the caller can name the offending entry instead of only counting it; a
+     * {@code @KeyIndex}-indexed read also reports an element whose body id disagreed with its section key
+     * (the section key wins, the disagreement is recorded).
      */
     public <T> BindResult<List<T>> getListResult(final String path, final Class<T> elementType) {
         return getListResult(path, elementType, requireCodec());
@@ -736,7 +738,7 @@ public class Config implements AutoCloseable {
      * as an array, with a read-only tolerance for the legacy numeric-keyed object shape (see
      * {@link #listElements}). Lenient: an unbindable array element is skipped, and an indexed element whose
      * body id disagrees with its section key is reconciled to the key. {@code issues}, when non-null, collects
-     * the indexed-read reconciliations.
+     * every skipped entry and the indexed-read reconciliations.
      */
     private <T> List<T> readList(final String path, final Class<T> elementType, final Codec codec,
                                 final List<LoadIssue> issues) {
@@ -757,18 +759,22 @@ public class Config implements AutoCloseable {
             // a compact element has no sub-path, so neither its hooks nor its rules have anywhere to bind
             LifecycleGraphWalker.warnCompactHooks(elementType);
             RuleBindDriver.warnCompactRules(ruleEngine, elementType);
-            return ElementStringList.fromArray(node, elementType, mapper, compact);
+            return ElementStringList.fromArray(node, path, elementType, mapper, compact, issues);
         }
         final List<T> out = new ArrayList<>();
         final List<JsonNode> elements = listElements(node);
         if (elements == null) {
             return out;
         }
-        for (final JsonNode element : elements) {
+        for (int index = 0; index < elements.size(); index++) {
+            final JsonNode element = elements.get(index);
             try {
                 out.add(mapper.convertValue(element, elementType));
             } catch (final IllegalArgumentException badElement) {
                 // lenient: skip an element that cannot be bound to elementType
+                if (issues != null) {
+                    issues.add(LoadIssue.skippedListElement(path, index, element, elementType, badElement));
+                }
             }
         }
         firePostLoadElements(path, out, false, issues != null ? issues : Collections.<LoadIssue>emptyList());

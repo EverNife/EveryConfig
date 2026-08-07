@@ -2111,6 +2111,29 @@ public abstract class AbstractConfigTest extends CodecMatrixTest {
     }
 
     @Test
+    @Order(144)
+    @DisplayName("[base] getListResult names the index of every entry the lenient read dropped")
+    void getListResult_namesEachSkippedEntryByIndex() {
+        final Config c = open();
+        c.setValue("weights", Arrays.<Object>asList(1, "two", 3, "four"));
+
+        assertEquals(Arrays.asList(1, 3), c.getList("weights", Integer.class)); // lenient: the rest still loads
+
+        final BindResult<List<Integer>> r = c.getListResult("weights", Integer.class);
+        assertEquals(Arrays.asList(1, 3), r.value());
+        assertEquals(2, r.issues().size());
+        assertEquals("weights[1]", r.issues().get(0).key());   // the index in the file, not just a count
+        assertEquals("weights[3]", r.issues().get(1).key());
+        assertEquals(LoadIssue.Kind.COERCION, r.issues().get(0).kind());
+        assertEquals(Integer.class, r.issues().get(0).targetType());
+        assertTrue(String.valueOf(r.issues().get(0).rawValue()).contains("two"), "" + r.issues().get(0));
+
+        // a list the file got right reports nothing
+        c.setValue("clean", Arrays.asList(1, 2));
+        assertFalse(c.getListResult("clean", Integer.class).hasIssues());
+    }
+
+    @Test
     @Order(145)
     @DisplayName("[base] EntityBinder ConfigSection overloads + path-scoped readInto/readIntoResult")
     void entityBinder_sectionOverloadsAndReadInto() {
@@ -2832,6 +2855,10 @@ public abstract class AbstractConfigTest extends CodecMatrixTest {
         final List<Dtos.DualFormPos> back = c.getList("xs", Dtos.DualFormPos.class);
         assertEquals(1, back.size()); // the good element survives; the malformed one is skipped, no throw
         assertEquals(new Dtos.DualFormPos(4, 5, 6), back.get(0));
+
+        final BindResult<List<Dtos.DualFormPos>> r = c.getListResult("xs", Dtos.DualFormPos.class);
+        assertEquals(1, r.issues().size());
+        assertEquals("xs[1]", r.issues().get(0).key()); // the compact read names the entry too
     }
 
     @Test

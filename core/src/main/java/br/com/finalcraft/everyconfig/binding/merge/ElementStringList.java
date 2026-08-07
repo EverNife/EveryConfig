@@ -1,6 +1,7 @@
 package br.com.finalcraft.everyconfig.binding.merge;
 
 import br.com.finalcraft.everyconfig.binding.BindException;
+import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.selfdescribe.CompactElementCodec;
 import br.com.finalcraft.everyconfig.selfdescribe.CompactElementResolver;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -51,17 +52,21 @@ public final class ElementStringList {
     }
 
     /**
-     * Read a list tolerantly: a textual element is rebuilt via {@code codec.decode}, an object element via the
-     * normal rich bind through {@code mapper}. A null or unreadable element is skipped (lenient, like the plain
-     * list read).
+     * Read the list stored at {@code listPath} tolerantly: a textual element is rebuilt via
+     * {@code codec.decode}, an object element via the normal rich bind through {@code mapper}. A null or
+     * unreadable element is skipped (lenient, like the plain list read); {@code issues}, when non-null,
+     * collects one entry per element the read dropped, keyed by its index in the file.
      */
-    public static <T> List<T> fromArray(final JsonNode node, final Class<T> type, final ObjectMapper mapper,
-                                        final CompactElementCodec<T> codec) {
+    public static <T> List<T> fromArray(final JsonNode node, final String listPath, final Class<T> type,
+                                        final ObjectMapper mapper, final CompactElementCodec<T> codec,
+                                        final List<LoadIssue> issues) {
         final List<T> out = new ArrayList<>();
         if (!(node instanceof ArrayNode)) {
             return out;
         }
+        int index = -1;
         for (final JsonNode element : node) {
+            index++;
             if (element == null || element.isNull()) {
                 continue;
             }
@@ -73,6 +78,9 @@ public final class ElementStringList {
                 }
             } catch (final RuntimeException badElement) {
                 // lenient: skip an element that cannot be read in either the compact or the rich form
+                if (issues != null) {
+                    issues.add(LoadIssue.skippedListElement(listPath, index, element, type, badElement));
+                }
             }
         }
         return out;
