@@ -353,7 +353,7 @@ public class ServerConfig {
 
     @Comment("Auth token. Fill it before the service will start.")
     @Explicit @NotBlank
-    private String token = "";
+    private String token = "changeme";       // a seed @NotBlank accepts, and @Explicit still demands better
 
     @OneOf(value = {"MONGO", "SQL", ""}, ignoreCase = true)
     private String dbType = "";
@@ -388,6 +388,9 @@ if (config.hasRuleFixes()) {
 - **The same declarations build a screen.** `RuleModel.of(type, selector)` returns every rule of a type with
   the exact FILE path its value lands at, its `@Comment` and its default — no `Config`, no `ObjectMapper`, no
   file touched.
+- **And they judge a value with no bind at all.** `RuleEvaluator` runs one site against a value you already
+  hold — what a user just typed, a value assembled in memory — and hands back what each violation costs
+  instead of failing a load.
 - **And they can document themselves.** `withRuleComments(true)` folds each rule's own text into the comment
   at its path, composed into the `@Comment` already there.
 

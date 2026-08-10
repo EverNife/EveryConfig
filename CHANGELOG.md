@@ -13,28 +13,6 @@ Published artifacts, group `br.com.finalcraft.everyconfig`:
 
 ## [Unreleased]
 
-### Added
-
-- **Rules can be judged outside a bind.** `RuleEvaluator` runs one `RuleSite` against a value the caller
-  already holds — for a scanner with its own field walk and key grammar, a screen validating what a user
-  just typed, a value assembled in memory. Everything a bind reads off the tree becomes a parameter (where
-  the value lives, what it is, where it came from, which instance declares it), and the violations come back
-  reported at the path the caller evaluated at rather than at the site's own.
-
-  ```java
-  RuleEvaluation outcome = RuleEvaluator.of(StandardRules.engine())
-          .withPolicy(RulePolicy.defaults().withSeverity(RulePolicy.Severity.LOG).withCorrections(true))
-          .evaluate(site, config.getConfigSection(key), value, ValueSource.FILE, owner);
-
-  for (RuleFinding finding : outcome.findings()) {   // violation() + severity() + message()
-      ...
-  }
-  ```
-
-  It never throws for a violation — the severity comes back on the finding and the caller decides — while a
-  handler that FAILS while judging still throws. `@RuleReview` does not run (it reads every violation of an
-  instance at once), and a correction reaches the field but not the tree.
-
 ## [1.1.0]
 
 A config POJO can now declare **meaning** on top of shape: `@Min(0) @Max(100)` on a percentage, `@Explicit`
@@ -72,6 +50,9 @@ break a build.
 - **`LoadIssueAware` is handed the finished list.** It used to receive only the coercion issues, because it
   was called before rules existed; it is now called after the rule pass, so it sees both kinds in one list —
   the same list `@PostLoad` already received.
+
+- **`KeyIndexer.fromIndexed` takes the section's path.** It keys its issues at the entry's own path now, which
+  it cannot build without knowing where the section sits: `fromIndexed(node, "accounts", type, mapper, issues)`.
 
 - **`ConfigContext.issues()` is also populated at `@PostSave`.** A rule that finds something while the entity
   is being written has somewhere to report it, so the one channel now runs in both directions. It stays empty
@@ -127,6 +108,44 @@ break a build.
   at its path — `"At most 65535."` under the `@Comment` already there. Off by default, composed into a single
   write (never appended, so repeated saves cannot grow the block), and a field documented only by its rules is
   written set-if-absent so library text never overwrites a hand-written comment.
+
+- **Rules can be judged outside a bind.** `RuleEvaluator` runs one `RuleSite` against a value the caller
+  already holds — for a scanner with its own field walk and key grammar, a screen validating what a user
+  just typed, a value assembled in memory. Everything a bind reads off the tree becomes a parameter (where
+  the value lives, what it is, where it came from, which instance declares it), and the violations come back
+  reported at the path the caller evaluated at rather than at the site's own.
+
+  ```java
+  RuleEvaluation outcome = RuleEvaluator.of(StandardRules.engine())
+          .withPolicy(RulePolicy.defaults().withSeverity(RulePolicy.Severity.LOG).withCorrections(true))
+          .evaluate(site, config.getConfigSection(key), value, ValueSource.FILE, owner);
+
+  for (RuleFinding finding : outcome.findings()) {   // violation() + severity() + message()
+      ...
+  }
+  ```
+
+  It never throws for a violation — the severity comes back on the finding and the caller decides — while a
+  handler that FAILS while judging still throws. `@RuleReview` does not run (it reads every violation of an
+  instance at once), and a correction reaches the field but not the tree. `owner` may be null for a value
+  that belongs to no instance yet; the other arguments are required, and a missing one says what to pass.
+
+- **`RuleContext.engine()`.** The engine the config attached, handed to the handler it is running. A rule that
+  has to judge something OTHER than its own site evaluates it through this one, so an annotation whose engine
+  nobody attached stays inert instead of deciding a bind behind the config's back.
+
+- **`@Explicit` refuses a declaration with no legal first run.** `@Explicit @NotBlank String token = ""` asks
+  the operator to overwrite a default that the rule beside it rejects — a fresh file is seeded with exactly
+  that value, so there is nothing valid to write and no first run that can pass. It fails on every
+  application, not only on the run where the key happens to be missing, and the message names both
+  annotations. Only a neighbour the ATTACHED engine claims counts.
+
+### Fixed
+
+- **A lenient list read names the entry it dropped.** `getListResult` used to report only the `@KeyIndex`
+  reconciliations, so a skipped element could be counted but not found. Every dropped entry is now one issue
+  keyed at its own path — `weights[1]` for a list, `accounts.alice` for a `@KeyIndex` section, and, for the
+  legacy numeric-keyed layout, the key the file uses rather than the position it landed at.
 
 ## [1.0.1]
 
