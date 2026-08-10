@@ -17,6 +17,7 @@ public final class RuleContext {
     private final ValueSource source;
     private final ConfigSection section;
     private final RuleReport report;
+    private final RuleEngine engine;
     private final RulePolicy policy;
     private final boolean strictCoercion;
 
@@ -25,7 +26,7 @@ public final class RuleContext {
 
     RuleContext(final RuleSite site, final RulePhase phase, final Object value, final Object owner,
                 final ValueSource source, final ConfigSection section, final RuleReport report,
-                final RulePolicy policy, final boolean strictCoercion) {
+                final RuleEngine engine, final RulePolicy policy, final boolean strictCoercion) {
         this.site = site;
         this.phase = phase;
         this.value = value;
@@ -33,6 +34,7 @@ public final class RuleContext {
         this.source = source;
         this.section = section;
         this.report = report;
+        this.engine = engine;
         this.policy = policy;
         this.strictCoercion = strictCoercion;
     }
@@ -68,6 +70,16 @@ public final class RuleContext {
 
     public RuleReport report() {
         return report;
+    }
+
+    /**
+     * The engine running this check — the one the config attached, not the vocabulary the handler happens to
+     * ship with. A handler that has to judge something OTHER than its own site (a neighbouring rule, a value
+     * it wants a second opinion on) evaluates it through this one, so an annotation nobody attached an engine
+     * for stays inert instead of deciding a bind behind the config's back.
+     */
+    public RuleEngine engine() {
+        return engine;
     }
 
     /**

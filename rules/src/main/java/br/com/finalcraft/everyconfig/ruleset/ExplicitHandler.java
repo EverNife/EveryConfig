@@ -21,9 +21,6 @@ import java.util.List;
  */
 public final class ExplicitHandler implements RuleHandler {
 
-    /** Judges the SEED, so nothing may be rewritten by it: the default policy has corrections off. */
-    private static final RuleEvaluator SEED_JUDGE = RuleEvaluator.of(StandardRules.engine());
-
     @Override
     public void check(final RuleContext context) {
         requireASeedWorthWriting(context);
@@ -45,13 +42,19 @@ public final class ExplicitHandler implements RuleHandler {
      * declaration with no legal first run: nothing valid can be written, and the operator is handed a file
      * that is already broken. That is a defect in the CODE, so it fails on every application rather than only
      * on the run where the key still happens to be missing.
+     *
+     * <p>Only a neighbour the ATTACHED engine claims counts. An annotation whose engine this config never
+     * attached never rejects anything here either, so the seed it would have refused is one this config
+     * happily writes.
      */
     private static void requireASeedWorthWriting(final RuleContext context) {
         final RuleSite explicit = context.site();
         if (explicit.field() == null) {
             return;
         }
-        for (final RuleSite sibling : RuleModel.of(explicit.owner(), StandardRules.engine().selector())) {
+        // Corrections stay off (the default policy): a seed is judged, never rewritten.
+        final RuleEvaluator seedJudge = RuleEvaluator.of(context.engine());
+        for (final RuleSite sibling : RuleModel.of(explicit.owner(), context.engine().selector())) {
             // By equality, not identity: the sibling was resolved from the declaring class and the @Explicit
             // site may have been resolved from an entity that merely nests it, which is a separate walk.
             if (!explicit.field().equals(sibling.field())
@@ -64,7 +67,7 @@ public final class ExplicitHandler implements RuleHandler {
                 // same here, and refusing a declaration on that guess is worse than missing one.
                 continue;
             }
-            if (SEED_JUDGE.evaluate(sibling, context.section(), seed, ValueSource.DEFAULT, context.owner())
+            if (seedJudge.evaluate(sibling, context.section(), seed, ValueSource.DEFAULT, context.owner())
                     .findings().isEmpty()) {
                 continue;
             }

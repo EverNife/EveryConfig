@@ -110,6 +110,6 @@ class AnnotationRuleEngineTest {
     private RuleContext contextFor(final RuleSite site, final Object owner) {
         return new RuleContext(site, RulePhase.VALIDATE, null, owner, ValueSource.FILE,
                 new ConfigSection(config, site.path()), violation -> {
-        }, RulePolicy.defaults(), false);
+        }, AnnotationRuleEngine.INSTANCE, RulePolicy.defaults(), false);
     }
 }

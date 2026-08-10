@@ -61,12 +61,12 @@ class RuleContextTest {
         final RuleSite site = RuleModel.of(Corrigible.class).get(0);
         return new RuleContext(site, RulePhase.VALIDATE, 150, new Corrigible(), ValueSource.FILE,
                 new ConfigSection(config, site.path()), violation -> {
-        }, policy, strictCoercion);
+        }, AnnotationRuleEngine.INSTANCE, policy, strictCoercion);
     }
 
     private RuleContext context(final RuleSite site, final Object owner, final RulePolicy policy) {
         return new RuleContext(site, RulePhase.VALIDATE, null, owner, ValueSource.FILE,
                 new ConfigSection(config, site.path()), violation -> {
-        }, policy, false);
+        }, AnnotationRuleEngine.INSTANCE, policy, false);
     }
 }

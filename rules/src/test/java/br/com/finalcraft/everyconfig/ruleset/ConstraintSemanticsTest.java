@@ -223,4 +223,31 @@ class ConstraintSemanticsTest {
         assertEquals(Arrays.asList("world: must be one of static, dynamic, but is 'end'"),
                 messages(rejected.bind(UnionOneOfDto.class).readResult("")));
     }
+
+    // ===================== @Explicit =====================
+
+    static class UnwritableSeedDto {
+
+        @Explicit
+        @NotBlank
+        public String token = "";
+    }
+
+    @Test
+    @DisplayName("@Explicit weighs only a neighbour the ATTACHED engine claims")
+    void explicitJudgesTheSeedWithTheAttachedEngine() {
+        // The default engine claims @ConfigRule-marked annotations only, so @NotBlank never fires here and
+        // the empty seed it would have refused is one this config writes without complaint.
+        final BindResult<UnwritableSeedDto> onlyExplicit =
+                Config.inMemory().bind(UnwritableSeedDto.class).readResult("");
+        assertEquals(Arrays.asList(
+                "token: must be set in the config file; the value in use is the built-in default"),
+                messages(onlyExplicit));
+
+        // Attaching jakarta makes the same declaration unwritable, and the failure names both annotations.
+        final BindException failure = assertThrows(BindException.class,
+                () -> Config.inMemory().withRuleEngine(StandardRules.engine())
+                        .bind(UnwritableSeedDto.class).readResult(""));
+        assertTrue(failure.getMessage().contains("sits beside @NotBlank"), failure.getMessage());
+    }
 }

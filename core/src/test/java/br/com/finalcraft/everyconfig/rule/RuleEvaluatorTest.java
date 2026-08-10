@@ -113,6 +113,33 @@ class RuleEvaluatorTest {
         assertEquals("rule @TestMax(10) at 'Settings.rows' failed: no world loaded", failure.getMessage());
     }
 
+    @Test
+    void anOwnerlessValueIsStillJudged() {
+        final RuleEvaluation evaluation = evaluate(evaluator, Bounded.class, null, 99, ValueSource.FILE);
+
+        assertEquals(1, evaluation.findings().size());
+        assertTrue(evaluation.findings().get(0).message().contains("relax the rule on Bounded.rows"));
+    }
+
+    @Test
+    void aMissingArgumentSaysWhatToPassInstead() {
+        final RuleSite site = RuleModel.of(Bounded.class).get(0);
+        final ConfigSection at = new ConfigSection(config, "Settings.rows");
+
+        assertEquals("RuleEvaluator.evaluate needs 'site': take one from RuleModel.of(type) - a rule someone "
+                        + "declared is the only thing there is to judge.",
+                assertThrows(IllegalArgumentException.class,
+                        () -> evaluator.evaluate(null, at, 5, ValueSource.FILE, new Bounded())).getMessage());
+
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> evaluator.evaluate(site, null, 5, ValueSource.FILE, new Bounded()))
+                .getMessage().contains("config.getConfigSection(path)"));
+
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> evaluator.evaluate(site, at, 5, null, new Bounded()))
+                .getMessage().contains("ValueSource.FILE"));
+    }
+
     private RuleEvaluation evaluate(final RuleEvaluator evaluator, final Class<?> type, final Object owner,
                                     final Object value, final ValueSource source) {
         return evaluator.evaluate(RuleModel.of(type).get(0), new ConfigSection(config, "Settings.rows"),

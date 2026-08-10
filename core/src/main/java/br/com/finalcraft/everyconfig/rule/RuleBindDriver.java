@@ -156,7 +156,7 @@ public final class RuleBindDriver {
             final ValueSource source = sourceOf(site.path(), sitePath);
             final RuleContext context = new RuleContext(site, phase, valueAt(site, owner, sitePath), owner,
                     source, new ConfigSection(config, sitePath),
-                    violation -> target.found(violation, site), policy, strictCoercion);
+                    violation -> target.found(violation, site), engine, policy, strictCoercion);
             try {
                 engine.apply(context);
             } catch (final BindException alreadyExplained) {

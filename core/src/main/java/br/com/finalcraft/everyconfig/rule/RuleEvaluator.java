@@ -69,12 +69,22 @@ public final class RuleEvaluator {
      * <p>The violations come back reported at {@code at}'s path rather than at the site's: a caller that
      * evaluates outside a bind put the value somewhere the binder's own path grammar never chose, and a
      * message naming a key the file does not have teaches nothing.
+     *
+     * <p>{@code owner} is the instance the rule may read its neighbours from, and the one a correction is
+     * written into; pass null for a value that belongs to no instance yet — the value is still judged, and a
+     * correction then only comes back on the evaluation.
      */
     public RuleEvaluation evaluate(final RuleSite site, final ConfigSection at, @Nullable final Object value,
-                                   final ValueSource source, final Object owner) {
+                                   final ValueSource source, @Nullable final Object owner) {
+        require(site != null, "site", "take one from RuleModel.of(type) - a rule someone declared is the only "
+                + "thing there is to judge");
+        require(at != null, "at", "a handler may look around the config from it, and the findings are reported "
+                + "at its path; use config.getConfigSection(path)");
+        require(source != null, "source", "ValueSource.FILE for a value someone supplied, ValueSource.DEFAULT "
+                + "for one the code chose - a rule about provenance has no other way to tell");
         final List<RuleViolation> found = new ArrayList<>();
         final RuleContext context = new RuleContext(site, RulePhase.VALIDATE, value, owner, source, at,
-                found::add, policy, false);
+                found::add, engine, policy, false);
         try {
             engine.apply(context);
         } catch (final BindException alreadyExplained) {
@@ -87,10 +97,16 @@ public final class RuleEvaluator {
         for (final RuleViolation raw : found) {
             final RuleViolation violation = raw.withPath(at.getPath());
             findings.add(new RuleFinding(violation, severityOf(violation),
-                    RuleMessages.rejection(violation, site, owner.getClass())));
+                    RuleMessages.rejection(violation, site, site.owner())));
         }
         return new RuleEvaluation(findings, context.corrected() ? context.correctedValue() : value,
                 context.corrected());
+    }
+
+    private static void require(final boolean satisfied, final String parameter, final String how) {
+        if (!satisfied) {
+            throw new IllegalArgumentException("RuleEvaluator.evaluate needs '" + parameter + "': " + how + ".");
+        }
     }
 
     /** What a violation costs: the stamp the engine put on it wins, then the policy's answer for the
