@@ -57,7 +57,7 @@ class KeyIndexerTest {
         final ObjectNode node = (ObjectNode) codec.readTree("{\"not-a-uuid\":{\"label\":\"x\"}}");
         final List<LoadIssue> issues = new ArrayList<>();
         final List<Dtos.KeyIndexUuidPojo> out =
-                KeyIndexer.fromIndexed(node, Dtos.KeyIndexUuidPojo.class, mapper, issues);
+                KeyIndexer.fromIndexed(node, "nodes", Dtos.KeyIndexUuidPojo.class, mapper, issues);
         assertTrue(out.isEmpty());
         assertFalse(issues.isEmpty());
     }
@@ -71,7 +71,7 @@ class KeyIndexerTest {
 
         final List<LoadIssue> issues = new ArrayList<>();
         final List<Dtos.KeyIndexAccountPojo> back =
-                KeyIndexer.fromIndexed(indexed, Dtos.KeyIndexAccountPojo.class, mapper, issues);
+                KeyIndexer.fromIndexed(indexed, "accounts", Dtos.KeyIndexAccountPojo.class, mapper, issues);
         assertEquals(1, back.size());
         assertEquals("alice", back.get(0).name); // restored from the section key
         assertEquals(100, back.get(0).balance);

@@ -716,9 +716,10 @@ public class Config implements AutoCloseable {
     /**
      * As {@link #getList(String, Class)}, returning the list together with any {@link LoadIssue}s collected —
      * the issues a bare {@link #getList} discards. Every entry the read leniently skipped is one issue, keyed
-     * {@code path[index]} so the caller can name the offending entry instead of only counting it; a
-     * {@code @KeyIndex}-indexed read also reports an element whose body id disagreed with its section key
-     * (the section key wins, the disagreement is recorded).
+     * at the entry's own path — {@code path[index]} for a list, {@code path.<key>} for a
+     * {@code @KeyIndex}-indexed section — so the caller can name the offending entry instead of only counting
+     * it; an indexed read also reports an element whose body id disagreed with its section key (the section
+     * key wins, the disagreement is recorded).
      */
     public <T> BindResult<List<T>> getListResult(final String path, final Class<T> elementType) {
         return getListResult(path, elementType, requireCodec());
@@ -746,7 +747,7 @@ public class Config implements AutoCloseable {
         final ObjectMapper mapper = codec.getObjectMapper();
         if (node instanceof ObjectNode && KeyIndexer.isKeyIndexed(elementType)) {
             final List<LoadIssue> sink = issues != null ? issues : new ArrayList<LoadIssue>();
-            final List<T> keyed = KeyIndexer.fromIndexed(node, elementType, mapper, sink);
+            final List<T> keyed = KeyIndexer.fromIndexed(node, path, elementType, mapper, sink);
             firePostLoadElements(path, keyed, true, sink);
             return keyed;
         }
@@ -762,18 +763,18 @@ public class Config implements AutoCloseable {
             return ElementStringList.fromArray(node, path, elementType, mapper, compact, issues);
         }
         final List<T> out = new ArrayList<>();
-        final List<JsonNode> elements = listElements(node);
+        final Map<Integer, JsonNode> elements = listElements(node);
         if (elements == null) {
             return out;
         }
-        for (int index = 0; index < elements.size(); index++) {
-            final JsonNode element = elements.get(index);
+        for (final Map.Entry<Integer, JsonNode> element : elements.entrySet()) {
             try {
-                out.add(mapper.convertValue(element, elementType));
+                out.add(mapper.convertValue(element.getValue(), elementType));
             } catch (final IllegalArgumentException badElement) {
                 // lenient: skip an element that cannot be bound to elementType
                 if (issues != null) {
-                    issues.add(LoadIssue.skippedListElement(path, index, element, elementType, badElement));
+                    issues.add(LoadIssue.skippedListElement(path, element.getKey(), element.getValue(),
+                            elementType, badElement));
                 }
             }
         }
@@ -782,20 +783,22 @@ public class Config implements AutoCloseable {
     }
 
     /**
-     * The elements to read as a list from {@code node}: the items of an array, or — for backward
-     * compatibility with the old FinalConfig storage, which persisted a list as an object keyed by
-     * throwaway numeric indexes ('0','1','2',...) rather than a real sequence — that object's values in
-     * index order. Read-only tolerance: {@code save()} always re-emits the modern array form, so a loaded
-     * legacy list is migrated on the next write. Returns null when {@code node} is neither shape, so the
-     * caller yields an empty list. The gate is all-numeric keys, which a genuine {@code Map}/POJO never has,
-     * so nothing but the legacy layout is reinterpreted; {@code @KeyIndex} lists are handled earlier and
-     * never reach here.
+     * The elements to read as a list from {@code node}, each under the index that addresses it in the file:
+     * the items of an array, or — for backward compatibility with the old FinalConfig storage, which
+     * persisted a list as an object keyed by throwaway numeric indexes ('0','1','2',...) rather than a real
+     * sequence — that object's values under their own keys, in index order. Those keys ARE indexes, so a
+     * sparse legacy list still names each element where the file put it. Read-only tolerance: {@code save()}
+     * always re-emits the modern array form, so a loaded legacy list is migrated on the next write. Returns
+     * null when {@code node} is neither shape, so the caller yields an empty list. The gate is all-numeric
+     * keys, which a genuine {@code Map}/POJO never has, so nothing but the legacy layout is reinterpreted;
+     * {@code @KeyIndex} lists are handled earlier and never reach here.
      */
-    private static List<JsonNode> listElements(final JsonNode node) {
+    private static Map<Integer, JsonNode> listElements(final JsonNode node) {
         if (node instanceof ArrayNode) {
-            final List<JsonNode> items = new ArrayList<>();
+            final Map<Integer, JsonNode> items = new LinkedHashMap<>();
+            int index = 0;
             for (final JsonNode element : node) {
-                items.add(element);
+                items.put(index++, element);
             }
             return items;
         }
@@ -810,7 +813,7 @@ public class Config implements AutoCloseable {
                 }
                 byIndex.put(index, field.getValue());
             }
-            return new ArrayList<>(byIndex.values());
+            return byIndex;
         }
         return null;
     }

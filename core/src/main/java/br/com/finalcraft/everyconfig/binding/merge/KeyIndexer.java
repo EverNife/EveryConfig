@@ -3,6 +3,7 @@ import br.com.finalcraft.everyconfig.annotation.KeyIndex;
 import br.com.finalcraft.everyconfig.binding.BindException;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.binding.schema.BindingNames;
+import br.com.finalcraft.everyconfig.core.tree.DPath;
 
 import com.fasterxml.jackson.databind.BeanDescription;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -74,8 +75,13 @@ public final class KeyIndexer {
         return out;
     }
 
-    public static <T> List<T> fromIndexed(final JsonNode node, final Class<T> type, final ObjectMapper mapper,
-                                          final List<LoadIssue> issues) {
+    /**
+     * Read the key-major section stored at {@code sectionPath} as a list of {@code type}. Every issue is
+     * keyed at the entry's own path — {@code sectionPath.<key>} — so a caller holding issues from several
+     * reads can still tell which entry of which collection each one names.
+     */
+    public static <T> List<T> fromIndexed(final JsonNode node, final String sectionPath, final Class<T> type,
+                                          final ObjectMapper mapper, final List<LoadIssue> issues) {
         final List<T> out = new ArrayList<>();
         if (!(node instanceof ObjectNode)) {
             return out;
@@ -85,6 +91,7 @@ public final class KeyIndexer {
         while (it.hasNext()) {
             final Map.Entry<String, JsonNode> e = it.next();
             final String sectionKey = e.getKey();
+            final String entryPath = DPath.joinSegment(sectionPath, sectionKey);
             // Lenient, like every other read path: a single bad entry (an unbindable body, or a section key
             // that cannot be cast to the id type — e.g. a corrupted UUID) is recorded and skipped, never
             // failing the whole read.
@@ -92,13 +99,13 @@ public final class KeyIndexer {
                 final T entity = mapper.convertValue(e.getValue(), type);
                 final Object bodyId = read(id, entity);
                 if (bodyId != null && !String.valueOf(bodyId).equals(sectionKey)) {
-                    issues.add(new LoadIssue(sectionKey, bodyId, id.getType(),
+                    issues.add(new LoadIssue(entryPath, bodyId, id.getType(),
                             "id in the entity body disagrees with the section key; the section key wins"));
                 }
                 write(id, entity, castKey(sectionKey, id.getType()));
                 out.add(entity);
             } catch (final RuntimeException badEntry) {
-                issues.add(new LoadIssue(sectionKey, null, type,
+                issues.add(new LoadIssue(entryPath, null, type,
                         "could not read @KeyIndex entry '" + sectionKey + "': " + badEntry.getMessage()));
             }
         }

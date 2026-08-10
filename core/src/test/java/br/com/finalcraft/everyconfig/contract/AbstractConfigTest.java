@@ -910,6 +910,7 @@ public abstract class AbstractConfigTest extends CodecMatrixTest {
         assertEquals("alice", r.value().get(0).name); // the section key wins, not the body's "WRONG"
         assertEquals(7, r.value().get(0).balance);
         assertTrue(r.hasIssues());                     // the disagreement is recorded
+        assertEquals("accounts.alice", r.issues().get(0).key()); // at the entry's path, not a bare key
 
         // a clean indexed read has no issues
         c.setValue("accounts", Arrays.asList(new Dtos.KeyIndexAccountPojo("zoe", 9)));
@@ -2131,6 +2132,21 @@ public abstract class AbstractConfigTest extends CodecMatrixTest {
         // a list the file got right reports nothing
         c.setValue("clean", Arrays.asList(1, 2));
         assertFalse(c.getListResult("clean", Integer.class).hasIssues());
+    }
+
+    @Test
+    @Order(289)
+    @DisplayName("[base] a legacy numeric-keyed list names the dropped entry by its own key, not its position")
+    void getListResult_legacyIndexedObject_namesTheFileKey() {
+        final Config c = open();
+        c.setValue("weights.0", 1);
+        c.setValue("weights.5", "five"); // the legacy shape is sparse: key 5 sits at position 1
+
+        assertEquals(Arrays.asList(1), c.getList("weights", Integer.class));
+
+        final BindResult<List<Integer>> r = c.getListResult("weights", Integer.class);
+        assertEquals(1, r.issues().size());
+        assertEquals("weights[5]", r.issues().get(0).key()); // the key the file uses, not where it landed
     }
 
     @Test

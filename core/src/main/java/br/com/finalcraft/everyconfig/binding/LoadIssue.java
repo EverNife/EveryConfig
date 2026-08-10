@@ -52,8 +52,9 @@ public final class LoadIssue {
      */
     public static LoadIssue skippedListElement(final String listPath, final int index, final Object rawValue,
                                                final Class<?> elementType, final Throwable cause) {
+        final String why = cause.getMessage() != null ? cause.getMessage() : cause.getClass().getSimpleName();
         return new LoadIssue(listPath + "[" + index + "]", rawValue, elementType,
-                "cannot be read; fix or delete this entry: " + cause.getMessage());
+                "cannot be read; fix or delete this entry: " + why);
     }
 
     private LoadIssue(final String key, final Object rawValue, final Class<?> targetType, final String message,
