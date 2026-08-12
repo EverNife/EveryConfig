@@ -72,6 +72,28 @@ class LifecycleGraphWalkerTest {
         public Map<String, HookByAnnotation> m;
     }
 
+    /** Hook-bearing values behind two layers of container — the walk reaches them structurally, so the gate
+     *  must see through the container in between. One shape per fixture, since a single unprovable field
+     *  would answer for all of them. */
+    static class NestedListOwner {
+        public List<List<HookByInterface>> groups;
+    }
+
+    static class GridOwner {
+        public HookByInterface[][] grid;
+    }
+
+    static class NestedMapOwner {
+        public Map<String, List<HookByAnnotation>> byName;
+    }
+
+    /** The same shapes holding only leaves: nothing to walk, and the gate can say so. */
+    static class NestedScalarOwner {
+        public List<List<String>> groups;
+        public String[][] grid;
+        public Map<String, List<Integer>> byName;
+    }
+
     /** Used only here, so the static one-time warn guard is exercised cleanly. */
     static class CompactWarnType implements ConfigLifecycle {
     }
@@ -104,6 +126,19 @@ class LifecycleGraphWalkerTest {
         assertTrue(LifecycleGraphWalker.mayContainHooks(FieldOwner.class));
         assertTrue(LifecycleGraphWalker.mayContainHooks(ListOwner.class));
         assertTrue(LifecycleGraphWalker.mayContainHooks(MapOwner.class));
+    }
+
+    @Test
+    @DisplayName("mayContainHooks: a nested container is judged by what it ultimately holds")
+    void mayContainHooks_seesThroughNestedContainers() {
+        assertTrue(LifecycleGraphWalker.mayContainHooks(NestedListOwner.class),
+                "a hook two lists deep is still reached by the walk");
+        assertTrue(LifecycleGraphWalker.mayContainHooks(GridOwner.class),
+                "the walk descends an array of arrays element by element");
+        assertTrue(LifecycleGraphWalker.mayContainHooks(NestedMapOwner.class),
+                "a map value that is itself a list of hook-bearing elements is reached too");
+        assertFalse(LifecycleGraphWalker.mayContainHooks(NestedScalarOwner.class),
+                "a container of containers of leaves has nothing for the walk to find");
     }
 
     // ---- compact-element warning ----

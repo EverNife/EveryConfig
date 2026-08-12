@@ -13,6 +13,48 @@ Published artifacts, group `br.com.finalcraft.everyconfig`:
 
 ## [Unreleased]
 
+## [1.2.0]
+
+A type whose stored form is a single token — a reference, an id, a platform type a Jackson module owns — now
+crosses the binder as a **leaf**. Teaching the mapper is the whole gesture: the module that already says how
+the value is written now also says where the lifecycle walk stops, so nothing inside such a value is visited,
+fired, or held against the config that carries it. No new annotation, no registry, no API to opt into.
+
+### Fixed
+
+- **The lifecycle walk no longer steps inside a custom-serialized value.** It descended into any type that was
+  not a JDK type, `Map`, `Collection` or array — including one a Jackson module writes as a single token. A
+  reference type holding a live registry therefore had its internals walked, and a hook found down there fired
+  with a `ConfigSection` pointing at `owner.refs[0].registry`, a path the file does not contain. The walk now
+  stops at any value the config's mapper does not write as an object of fields.
+
+- **The hook gate reads generic containers.** It resolved a collection/map type argument only when that
+  argument was a plain class, so `List<Box<K,V>>` resolved to nothing and forced the walk on every read and
+  write. A container is now judged by what it ultimately holds, at any nesting depth — which also closes a
+  false negative in the other direction: `Hooked[][]` counted as "provably hook-free" (an array class declares
+  no fields), so hooks nested inside a two-dimensional array were silently skipped.
+
+### Added
+
+- **`LifecycleGraphWalker.mayContainHooks(Class, ObjectMapper)`** — the same gate, judged with the mapper the
+  value will actually be written by. A `final` type that mapper does not write as an object of fields is a
+  proven leaf, so a config type holding nothing but such values skips the walk entirely. A non-final one keeps
+  being walked (a subtype could be written as a bean after all), because no hook may be skipped on a guess.
+  The mapper-free `mayContainHooks(Class)` keeps its contract unchanged.
+
+- **`SerializedShape.emitsAsBean(ObjectMapper, Class)`** — the classifier underneath: does this mapper write
+  this type as an object of fields, or as something else? Cached per (mapper, class), like the schema caches.
+
+- **A warning when hooks are declared on such a type.** `@PostLoad` (or `ConfigLifecycle`) on a value stored as
+  one token cannot fire — there is no sub-path for its `ConfigSection` — so EveryConfig says so once per type
+  instead of skipping in silence, the treatment the compact list element already had.
+
+### Changed
+
+- **`LifecycleGraphWalker.anyMayHaveHooks` takes the mapper.** `anyMayHaveHooks(values, mapper)` replaces the
+  one-argument form, so the dynamic collection seams gate on the same evidence the walk itself uses; pass
+  `null` for the mapper-free answer.
+
 ## [1.1.0]
 
 A config POJO can now declare **meaning** on top of shape: `@Min(0) @Max(100)` on a percentage, `@Explicit`

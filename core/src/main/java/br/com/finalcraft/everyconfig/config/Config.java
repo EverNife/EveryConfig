@@ -277,7 +277,7 @@ public class Config implements AutoCloseable {
     private void writeValue(final String path, final Object value, final boolean merge) {
         if (codec != null && value instanceof Collection) {
             final Collection<?> coll = (Collection<?>) value;
-            if (!coll.isEmpty() && LifecycleGraphWalker.anyMayHaveHooks(coll)) {
+            if (!coll.isEmpty() && LifecycleGraphWalker.anyMayHaveHooks(coll, codec.getObjectMapper())) {
                 if (isCompactElementCollection(coll)) {
                     LifecycleGraphWalker.warnCompactHooks(firstElementType(coll));
                     RuleBindDriver.warnCompactRules(ruleEngine, firstElementType(coll));
@@ -295,7 +295,7 @@ public class Config implements AutoCloseable {
             }
         } else if (codec != null && value instanceof Map) {
             final Map<?, ?> map = (Map<?, ?>) value;
-            if (!map.isEmpty() && LifecycleGraphWalker.anyMayHaveHooks(map.values())) {
+            if (!map.isEmpty() && LifecycleGraphWalker.anyMayHaveHooks(map.values(), codec.getObjectMapper())) {
                 final String base = path == null ? "" : path;
                 LifecycleGraphWalker.fireMapValues(this, base, map,
                         LifecycleInvoker.Phase.PRE_SAVE, Collections.<LoadIssue>emptyList());
@@ -844,7 +844,8 @@ public class Config implements AutoCloseable {
      */
     private void firePostLoadElements(final String path, final List<?> elements, final boolean keyIndexed,
                                       final List<LoadIssue> issues) {
-        if (codec != null && !elements.isEmpty() && LifecycleGraphWalker.anyMayHaveHooks(elements)) {
+        if (codec != null && !elements.isEmpty()
+                && LifecycleGraphWalker.anyMayHaveHooks(elements, codec.getObjectMapper())) {
             LifecycleGraphWalker.fireCollectionElements(this, path == null ? "" : path, elements, keyIndexed,
                     LifecycleInvoker.Phase.POST_LOAD, issues);
         }

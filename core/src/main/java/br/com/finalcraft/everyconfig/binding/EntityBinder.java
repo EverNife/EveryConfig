@@ -224,7 +224,7 @@ public final class EntityBinder<T> {
         // elements) never fired. Walk the bound result and fire each hook-bearing node at its sub-path. No
         // nested PRE_LOAD — a nested instance does not exist before its own bind.
         if (shouldWalkGraph(result)) {
-            LifecycleGraphWalker.fireDescendants(config, result, section.getPath(),
+            LifecycleGraphWalker.fireDescendants(config, mapper, result, section.getPath(),
                     LifecycleInvoker.Phase.POST_LOAD, lastIssues);
         }
         return result;
@@ -251,9 +251,11 @@ public final class EntityBinder<T> {
 
     /** Whether the graph walk is worth running for a bound/serialized value: a container type may hold
      *  hook-bearing elements the raw class does not reveal, and a concrete value is gated by its own class
-     *  (a flat, hook-free POJO skips the walk entirely). */
+     *  (a flat, hook-free POJO skips the walk entirely). The gate is asked with this binder's mapper, the one
+     *  that decides which types get a sub-tree at all. */
     private boolean shouldWalkGraph(final Object value) {
-        return type.isContainerType() || (value != null && LifecycleGraphWalker.mayContainHooks(value.getClass()));
+        return type.isContainerType()
+                || (value != null && LifecycleGraphWalker.mayContainHooks(value.getClass(), mapper));
     }
 
     // ---- WRITE: POJO -> tree (merge, never replace; "" / null = the root) ----
@@ -266,11 +268,11 @@ public final class EntityBinder<T> {
      */
     public void write(final String path, final T pojo) {
         final ConfigSection section = config.getConfigSection(path == null ? "" : path);
-        final boolean walk = pojo != null && LifecycleGraphWalker.mayContainHooks(pojo.getClass());
+        final boolean walk = pojo != null && LifecycleGraphWalker.mayContainHooks(pojo.getClass(), mapper);
         LifecycleInvoker.fire(pojo, LifecycleInvoker.Phase.PRE_SAVE, section, Collections.<LoadIssue>emptyList());
         // Nested @PreSave BEFORE the projection, so a nested pre-save mutation is captured by valueToTree.
         if (walk) {
-            LifecycleGraphWalker.fireDescendants(config, pojo, section.getPath(),
+            LifecycleGraphWalker.fireDescendants(config, mapper, pojo, section.getPath(),
                     LifecycleInvoker.Phase.PRE_SAVE, Collections.<LoadIssue>emptyList());
         }
         // Rules run on the final state of the POJO and before the projection, so a normalization they apply
@@ -289,7 +291,7 @@ public final class EntityBinder<T> {
         // Nested @PostSave AFTER the merge: the sub-path is now materialized, so a nested post-save that
         // writes through context.section() lands where the entity actually is.
         if (walk) {
-            LifecycleGraphWalker.fireDescendants(config, pojo, section.getPath(),
+            LifecycleGraphWalker.fireDescendants(config, mapper, pojo, section.getPath(),
                     LifecycleInvoker.Phase.POST_SAVE, saveIssues);
         }
     }
