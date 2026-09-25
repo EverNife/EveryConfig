@@ -34,6 +34,14 @@ fired, or held against the config that carries it. No new annotation, no registr
   false negative in the other direction: `Hooked[][]` counted as "provably hook-free" (an array class declares
   no fields), so hooks nested inside a two-dimensional array were silently skipped.
 
+- **A typed read of an absent path no longer hands an empty object to a value type.** `getValue(path, type)`,
+  `getValueInto` and `EntityBinder.read`/`readInto` bound an absent path as `{}`, which is right for a bean (every
+  field keeps its default) and wrong for anything else: a type with its own deserializer — a Jackson module's
+  codec, `@JsonDeserialize(using = ...)` — was called with fields that are not there and failed the bind (a
+  `Location` codec died in `node.get("x")`). An absent path now reads `null` (and `readInto` returns the target
+  untouched) for every type the mapper does not read as a bean, without calling its deserializer. Scalars already
+  read `null`; `Map`, `Object` and `JsonNode`, which read an empty `{}`, now read `null` as well.
+
 ### Added
 
 - **`LifecycleGraphWalker.mayContainHooks(Class, ObjectMapper)`** — the same gate, judged with the mapper the
@@ -44,6 +52,7 @@ fired, or held against the config that carries it. No new annotation, no registr
 
 - **`SerializedShape.emitsAsBean(ObjectMapper, Class)`** — the classifier underneath: does this mapper write
   this type as an object of fields, or as something else? Cached per (mapper, class), like the schema caches.
+  Its read-side twin, `readsAsBean(ObjectMapper, JavaType)`, decides which absent paths still bind to defaults.
 
 - **A warning when hooks are declared on such a type.** `@PostLoad` (or `ConfigLifecycle`) on a value stored as
   one token cannot fire — there is no sub-path for its `ConfigSection` — so EveryConfig says so once per type

@@ -1,6 +1,7 @@
 package br.com.finalcraft.everyconfig.binding;
 import br.com.finalcraft.everyconfig.binding.merge.LifecycleGraphWalker;
 import br.com.finalcraft.everyconfig.binding.merge.LifecycleInvoker;
+import br.com.finalcraft.everyconfig.binding.merge.SerializedShape;
 import br.com.finalcraft.everyconfig.binding.merge.SmartMerge;
 import br.com.finalcraft.everyconfig.binding.schema.BindingNames;
 import br.com.finalcraft.everyconfig.binding.schema.Schema;
@@ -154,9 +155,11 @@ public final class EntityBinder<T> {
     /**
      * Bind the subtree at {@code path} ({@code ""} / {@code null} = the whole tree) to a FRESH instance.
      * Unknown keys are ignored and missing keys keep the constructed defaults; {@code @PostLoad} runs.
+     * An absent path yields the constructed defaults for a bean type, and {@code null} for any other type
+     * (scalar, container, a type with its own deserializer) without calling its deserializer.
      */
     public T read(final String path) {
-        return doRead(path, constructDefault());
+        return absentValue(path) ? null : doRead(path, constructDefault());
     }
 
     /** As {@link #read(String)}, scoped to a {@link ConfigSection}'s path. */
@@ -166,10 +169,11 @@ public final class EntityBinder<T> {
 
     /**
      * As {@link #read(String)}, but binding ONTO {@code target} — overwriting only where the subtree
-     * carries a value — instead of constructing a fresh instance. Returns {@code target}.
+     * carries a value — instead of constructing a fresh instance. Returns {@code target}, untouched when the
+     * path is absent and the type is not a bean.
      */
     public T readInto(final String path, final T target) {
-        return doRead(path, target);
+        return absentValue(path) ? target : doRead(path, target);
     }
 
     /** As {@link #readInto(String, Object)}, scoped to a {@link ConfigSection}'s path. */
@@ -205,6 +209,16 @@ public final class EntityBinder<T> {
      *  return the same issues alongside the value. */
     public List<LoadIssue> lastLoadIssues() {
         return lastIssues;
+    }
+
+    /** An absent path whose type the mapper does not read as a bean: an empty object is not a value of it
+     *  (a custom deserializer would read fields that are not there), so the read binds nothing. */
+    private boolean absentValue(final String path) {
+        if (config.getNode(path) != null || SerializedShape.readsAsBean(mapper, type)) {
+            return false;
+        }
+        lastIssues = Collections.emptyList();
+        return true;
     }
 
     private T doRead(final String path, final T base) {

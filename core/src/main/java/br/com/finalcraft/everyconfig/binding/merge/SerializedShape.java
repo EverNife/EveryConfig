@@ -1,14 +1,18 @@
 package br.com.finalcraft.everyconfig.binding.merge;
 
+import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.deser.BeanDeserializerBase;
+import com.fasterxml.jackson.databind.deser.DefaultDeserializationContext;
 import com.fasterxml.jackson.databind.ser.std.BeanSerializerBase;
 
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Whether an {@link ObjectMapper} writes a type as an object of its own fields, or as a single value of some
- * other shape. A Jackson module answers this by construction: registering a serializer for a type replaces
+ * Whether an {@link ObjectMapper} writes (or reads) a type as an object of its own fields, or as a single value
+ * of some other shape. A Jackson module answers this by construction: registering a serializer for a type replaces
  * the bean serializer the mapper would otherwise build, and from then on the value occupies ONE node with no
  * fields of its own — nothing inside it can be addressed by a config path.
  *
@@ -19,6 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class SerializedShape {
 
     private static final ConcurrentHashMap<ObjectMapper, ConcurrentHashMap<Class<?>, Boolean>> SHAPES =
+            new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<ObjectMapper, ConcurrentHashMap<JavaType, Boolean>> READ_SHAPES =
             new ConcurrentHashMap<>();
 
     private SerializedShape() {
@@ -52,6 +58,36 @@ public final class SerializedShape {
             return serializer instanceof BeanSerializerBase;
         } catch (final Exception unresolvable) {
             return false; // a type the mapper cannot build a serializer for writes no field sub-tree either
+        }
+    }
+
+    /**
+     * Whether {@code mapper} deserializes {@code type} as an object of fields (Jackson's bean deserializer),
+     * the only shape for which an empty object means "every field at its default". {@code false} for a
+     * scalar, enum, container, tree node, or a type a module or {@code @JsonDeserialize} gives its own
+     * deserializer — or one the mapper cannot resolve a deserializer for at all.
+     */
+    public static boolean readsAsBean(final ObjectMapper mapper, final JavaType type) {
+        final ConcurrentHashMap<JavaType, Boolean> byType =
+                READ_SHAPES.computeIfAbsent(mapper, m -> new ConcurrentHashMap<JavaType, Boolean>());
+        final Boolean cached = byType.get(type);
+        if (cached != null) {
+            return cached;
+        }
+        final boolean bean = resolvesToBeanDeserializer(mapper, type);
+        byType.put(type, bean);
+        return bean;
+    }
+
+    private static boolean resolvesToBeanDeserializer(final ObjectMapper mapper, final JavaType type) {
+        try {
+            final DefaultDeserializationContext context = ((DefaultDeserializationContext) mapper
+                    .getDeserializationContext())
+                    .createInstance(mapper.getDeserializationConfig(), null, mapper.getInjectableValues());
+            final JsonDeserializer<?> deserializer = context.findRootValueDeserializer(type);
+            return deserializer instanceof BeanDeserializerBase;
+        } catch (final Exception unresolvable) {
+            return false;
         }
     }
 }
