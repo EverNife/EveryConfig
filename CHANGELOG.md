@@ -13,6 +13,18 @@ Published artifacts, group `br.com.finalcraft.everyconfig`:
 
 ## [Unreleased]
 
+## [1.3.0]
+
+A typed read of an absent path is `null` for every type: absence is no longer a value of all defaults.
+
+### Changed
+
+- **`getValue(path, type)` reads an absent path as `null` for a bean too.** It returned a fresh instance with
+  every field at its default, so a caller could not tell "never written" from "written with defaults" without a
+  separate `contains` - a never-set spawn came back as a position in no world at `0,0,0`. Absence now reads
+  `null` for every type; `getValueInto(path, new T())` and `getOrSetValueIfAbsent` are the ways to ask for the
+  defaults. `readInto` is unchanged. A present-but-empty object (`settings: {}`) still binds to the defaults.
+
 ## [1.2.0]
 
 A type whose stored form is a single token — a reference, an id, a platform type a Jackson module owns — now
@@ -41,12 +53,6 @@ fired, or held against the config that carries it. No new annotation, no registr
   `Location` codec died in `node.get("x")`). An absent path now reads `null` (and `readInto` returns the target
   untouched) for every type the mapper does not read as a bean, without calling its deserializer. Scalars already
   read `null`; `Map`, `Object` and `JsonNode`, which read an empty `{}`, now read `null` as well.
-
-- **`getValue(path, type)` reads an absent path as `null` for a bean too.** It returned a fresh instance with
-  every field at its default, so a caller could not tell "never written" from "written with defaults" without a
-  separate `contains` - a never-set spawn came back as a position in no world at `0,0,0`. Absence now reads
-  `null` for every type; `getValueInto(path, new T())` and `getOrSetValueIfAbsent` are the ways to ask for the
-  defaults. `readInto` is unchanged. A present-but-empty object (`settings: {}`) still binds to the defaults.
 
 ### Added
 
