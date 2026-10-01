@@ -20,9 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 /**
- * A typed read of an absent path: a bean type still gets its defaults (an empty object binds every field to
- * its default), while a type the mapper reads some other way gets {@code null} and its deserializer is never
- * handed an empty object it cannot read.
+ * A typed read of an absent path reads {@code null} for every type, and a custom deserializer is never handed
+ * an empty object it cannot read. {@code readInto} onto a bean still binds the target's defaults.
  */
 class AbsentValueReadTest {
 
@@ -82,8 +81,20 @@ class AbsentValueReadTest {
     }
 
     @Test
-    void absentBeanTypeStillReadsItsDefaults() {
-        assertEquals(25565, configFrom("{}").getValue("settings", Settings.class, codec).port);
+    void absentBeanTypeReadsNull() {
+        assertNull(configFrom("{}").getValue("settings", Settings.class, codec));
+    }
+
+    @Test
+    void absentBeanTypeReadIntoKeepsTheTargetDefaults() {
+        final Settings target = new Settings();
+        assertSame(target, configFrom("{}").bind(Settings.class, codec).readInto("settings", target));
+        assertEquals(25565, target.port);
+    }
+
+    @Test
+    void emptyBeanObjectStillReadsItsDefaults() {
+        assertEquals(25565, configFrom("{\"settings\":{}}").getValue("settings", Settings.class, codec).port);
     }
 
     @Test

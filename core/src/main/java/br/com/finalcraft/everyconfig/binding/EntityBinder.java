@@ -155,11 +155,15 @@ public final class EntityBinder<T> {
     /**
      * Bind the subtree at {@code path} ({@code ""} / {@code null} = the whole tree) to a FRESH instance.
      * Unknown keys are ignored and missing keys keep the constructed defaults; {@code @PostLoad} runs.
-     * An absent path yields the constructed defaults for a bean type, and {@code null} for any other type
-     * (scalar, container, a type with its own deserializer) without calling its deserializer.
+     * An absent path yields {@code null} for every type, a bean included: absence is not an all-defaults
+     * value. A caller that wants the defaults asks for them with {@link #readInto(String, Object)}.
      */
     public T read(final String path) {
-        return absentValue(path) ? null : doRead(path, constructDefault());
+        if (config.getNode(path) == null) {
+            lastIssues = Collections.emptyList();
+            return null;
+        }
+        return doRead(path, constructDefault());
     }
 
     /** As {@link #read(String)}, scoped to a {@link ConfigSection}'s path. */

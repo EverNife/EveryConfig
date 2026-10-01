@@ -612,8 +612,8 @@ public class Config implements AutoCloseable {
     /**
      * Read the value at {@code path} bound to {@code type} — a scalar ({@code Integer}, {@code String},
      * ...) or a POJO. Lenient: a value that cannot be bound yields the type's default (often null). An absent
-     * path yields a POJO's defaults, and null for any other type (a scalar, a container, a type with its own
-     * deserializer). Runs {@code @PostLoad} for a POJO. Uses the lifecycle codec.
+     * path yields null for every type, a POJO included - {@link #getValueInto} or
+     * {@link #getOrSetValueIfAbsent} supply defaults. Runs {@code @PostLoad} for a POJO. Uses the lifecycle codec.
      *
      * @throws IllegalStateException if this config was not opened with a codec (e.g. {@code new Config()})
      */
