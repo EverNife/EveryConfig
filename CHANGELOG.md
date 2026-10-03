@@ -13,6 +13,18 @@ Published artifacts, group `br.com.finalcraft.everyconfig`:
 
 ## [Unreleased]
 
+### Fixed
+
+- **A YAML key that is markup is written quoted.** The commented YAML writer emitted every key bare, so a key
+  starting with an indicator (`%`, `@`, `&`, `*`, `!`, `|`, `>`, `'`, `"`, `#`, `{`, `[`, `` ` ``, `,`) or
+  holding `: `/` #` produced a file that no longer parsed: the next open backed it up to `.bak` and started
+  empty, and the save after that wrote the defaults over the user's edits. A PlaceholderAPI placeholder
+  (`%player_name%`) used as a key was enough. Such a key is now single-quoted (double-quoted with escapes when
+  it holds a control character), and the comment parser reads the quoted form back, so its comment survives.
+  A key that was valid bare is still written bare, byte for byte.
+- **A JSONC key with an escape keeps its comment.** The comment pass unescaped only `\"` and `\\`, so a key
+  holding a tab or another escaped character read back under a different path and its comment was dropped.
+
 ## [1.3.0]
 
 A typed read of an absent path is `null` for every type: absence is no longer a value of all defaults.

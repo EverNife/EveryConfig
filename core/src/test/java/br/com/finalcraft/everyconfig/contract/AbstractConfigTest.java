@@ -20,6 +20,7 @@ import br.com.finalcraft.everyconfig.testdata.Dtos;
 import br.com.finalcraft.everyconfig.testdata.UltraComplexDTO;
 import br.com.finalcraft.everyconfig.config.section.ConfigSection;
 import br.com.finalcraft.everyconfig.core.comment.CommentType;
+import br.com.finalcraft.everyconfig.core.tree.DPath;
 import br.com.finalcraft.everyconfig.rule.RulePolicy;
 import br.com.finalcraft.everyconfig.testkit.CodecMatrixTest;
 import br.com.finalcraft.everyconfig.rule.TestMax;
@@ -1466,6 +1467,69 @@ public abstract class AbstractConfigTest extends CodecMatrixTest {
 
         final Config r = open();
         assertEquals("x", r.getString("café"));
+    }
+
+    /** Keys a YAML plain scalar cannot carry (an indicator first, or a ": " / " #" inside) plus the
+     *  neighbors that must stay bare-safe, a control character and a backslash. */
+    private static final String[] SYNTAX_KEYS = {
+            "%abc", "@abc", "&abc", "*abc", "!abc", "|abc", ">abc", "'abc", "\"abc", "#abc", "{abc", "[abc",
+            "}abc", "]abc", ",abc", "`abc", "- abc", "-abc", "?abc", ": abc", "a: b", "a #b", "trail:",
+            " lead", "trail ", "it's", "tab\tkey", "back\\slash"
+    };
+
+    @Test
+    @Order(111)
+    @DisplayName("[base] a key that is markup in the format (YAML indicator, ': ', ' #'...) round-trips")
+    void syntaxKeys_roundTrip() {
+        final Config c = open();
+        for (int i = 0; i < SYNTAX_KEYS.length; i++) {
+            final String path = "keys." + DPath.escapeSegment(SYNTAX_KEYS[i]);
+            c.setValue(path, "v" + i);
+            c.setComment(path, "comment " + i);
+        }
+        c.save();
+
+        final Config r = open();
+        assertEquals(LoadStatus.OK, r.lastLoadStatus());
+        assertEquals(new HashSet<>(Arrays.asList(SYNTAX_KEYS)), r.getKeys("keys"));
+        for (int i = 0; i < SYNTAX_KEYS.length; i++) {
+            final String path = "keys." + DPath.escapeSegment(SYNTAX_KEYS[i]);
+            assertEquals("v" + i, r.getString(path), "value of key [" + SYNTAX_KEYS[i] + "]");
+            if (supportsComments()) {
+                assertEquals("comment " + i, r.getComment(path), "comment of key [" + SYNTAX_KEYS[i] + "]");
+            }
+        }
+        // the comment-less writer too
+        assertEquals(r.getRoot(), codec.readTree(codec.writeTreePlain(r.getRoot())));
+    }
+
+    @Test
+    @Order(111)
+    @DisplayName("[base] a placeholder-named section with a nested list and a comment survives reopen + reseed")
+    void placeholderKeySection_survivesReopen() {
+        final Map<String, Object> remap = new LinkedHashMap<>();
+        remap.put("1", Collections.singletonMap("value", "One"));
+        remap.put("aliases", Arrays.asList("%a%", "#b", "c"));
+        final Config c = open();
+        c.getOrSetValueIfAbsent("NormalRemaps.%pixelmon_party_size_all%", remap, "party size remap");
+        c.save();
+
+        final Config r = open();
+        assertEquals(LoadStatus.OK, r.lastLoadStatus());
+        assertEquals(Collections.singleton("%pixelmon_party_size_all%"), r.getKeys("NormalRemaps"));
+        assertEquals("One", r.getString("NormalRemaps.%pixelmon_party_size_all%.1.value"));
+        assertEquals(Arrays.asList("%a%", "#b", "c"),
+                r.getStringList("NormalRemaps.%pixelmon_party_size_all%.aliases"));
+        if (supportsComments()) {
+            assertEquals("party size remap", r.getComment("NormalRemaps.%pixelmon_party_size_all%"));
+        }
+        // a second open + save leaves an admin's edit in place instead of reseeding defaults over it
+        r.setValue("NormalRemaps.%pixelmon_party_size_all%.1.value", "Uno");
+        r.save();
+        final Config again = open();
+        again.getOrSetValueIfAbsent("NormalRemaps.%pixelmon_party_size_all%", remap, "party size remap");
+        again.save();
+        assertEquals("Uno", open().getString("NormalRemaps.%pixelmon_party_size_all%.1.value"));
     }
 
     @Test

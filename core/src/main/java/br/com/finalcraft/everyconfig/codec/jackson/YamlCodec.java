@@ -231,9 +231,10 @@ public final class YamlCodec implements Codec, CommentAware {
         final String ind = spaces(indent);
         final List<String> keys = orderedFieldNames(node, parentPath, order);
         for (int k = 0; k < keys.size(); k++) {
-            final String key = keys.get(k);
-            final JsonNode val = node.get(key);
-            final String path = DPath.joinSegment(parentPath, key);
+            final String rawKey = keys.get(k);
+            final JsonNode val = node.get(rawKey);
+            final String path = DPath.joinSegment(parentPath, rawKey);
+            final String key = keyToken(rawKey);
 
             // the file's vertical spacing above this key, raised to the style's floor
             for (int b = comments.effectiveBlankLinesBefore(path, depth, k == 0); b > 0; b--) {
@@ -313,6 +314,55 @@ public final class YamlCodec implements Codec, CommentAware {
                 }
             }
         }
+    }
+
+    /** The key as written in the file: bare when it reads back as the same plain scalar, otherwise
+     *  single-quoted, or double-quoted with escapes when it holds a control character. */
+    private static String keyToken(final String key) {
+        boolean control = false;
+        for (int i = 0; i < key.length(); i++) {
+            final char c = key.charAt(i);
+            if (c < 0x20 || c == 0x7F) {
+                control = true;
+                break;
+            }
+        }
+        if (control) {
+            final StringBuilder sb = new StringBuilder("\"");
+            for (int i = 0; i < key.length(); i++) {
+                final char c = key.charAt(i);
+                switch (c) {
+                    case '"': sb.append("\\\""); break;
+                    case '\\': sb.append("\\\\"); break;
+                    case '\n': sb.append("\\n"); break;
+                    case '\r': sb.append("\\r"); break;
+                    case '\t': sb.append("\\t"); break;
+                    default:
+                        if (c < 0x20 || c == 0x7F) {
+                            sb.append(String.format("\\u%04x", (int) c));
+                        } else {
+                            sb.append(c);
+                        }
+                }
+            }
+            return sb.append('"').toString();
+        }
+        return isPlainKey(key) ? key : "'" + key.replace("'", "''") + "'";
+    }
+
+    /** True when {@code key} written bare parses back as the same string key. Conservative: an
+     *  unsafe-looking key is quoted, which is always valid YAML. */
+    private static boolean isPlainKey(final String key) {
+        if (key.isEmpty() || key.charAt(0) == ' ' || key.charAt(key.length() - 1) == ' '
+                || key.endsWith(":") || key.contains(": ") || key.contains(" #")) {
+            return false;
+        }
+        final char first = key.charAt(0);
+        if ("%@&*!|>'\"#{}[],`".indexOf(first) >= 0) {
+            return false;
+        }
+        // '-', '?' and ':' start a plain scalar only when a non-space follows
+        return !("-?:".indexOf(first) >= 0 && (key.length() == 1 || key.charAt(1) == ' '));
     }
 
     /** True when every element is a scalar (the only kind that carries a tracked per-element comment). */
@@ -570,7 +620,14 @@ public final class YamlCodec implements Codec, CommentAware {
 
     /** Index of the ':' separating a key from its value (end-of-line or followed by a space). */
     private static int keyColon(final String s) {
-        for (int i = 0; i < s.length(); i++) {
+        int start = 0;
+        if (!s.isEmpty() && (s.charAt(0) == '\'' || s.charAt(0) == '"')) {
+            start = closingQuote(s) + 1; // a quoted key may hold ": " itself
+            if (start == 0) {
+                return -1;
+            }
+        }
+        for (int i = start; i < s.length(); i++) {
             if (s.charAt(i) == ':' && (i == s.length() - 1 || s.charAt(i + 1) == ' ')) {
                 return i;
             }
@@ -637,13 +694,56 @@ public final class YamlCodec implements Codec, CommentAware {
         return -1;
     }
 
-    private static String unquote(final String key) {
-        if (key.length() >= 2) {
-            final char a = key.charAt(0);
-            final char b = key.charAt(key.length() - 1);
-            if ((a == '"' && b == '"') || (a == '\'' && b == '\'')) {
-                return key.substring(1, key.length() - 1);
+    /** Index of the quote closing the quoted scalar that opens {@code s} ({@code ''} and {@code \"} are
+     *  escapes, not the end), or -1 when it never closes. */
+    private static int closingQuote(final String s) {
+        final char q = s.charAt(0);
+        for (int i = 1; i < s.length(); i++) {
+            final char c = s.charAt(i);
+            if (q == '"' && c == '\\') {
+                i++;
+            } else if (c == q) {
+                if (q == '\'' && i + 1 < s.length() && s.charAt(i + 1) == '\'') {
+                    i++;
+                } else {
+                    return i;
+                }
             }
+        }
+        return -1;
+    }
+
+    /** The key a (possibly quoted) key token stands for — the inverse of {@link #keyToken}. */
+    private static String unquote(final String key) {
+        if (key.length() < 2) {
+            return key;
+        }
+        final char a = key.charAt(0);
+        final char b = key.charAt(key.length() - 1);
+        if (a == '\'' && b == '\'') {
+            return key.substring(1, key.length() - 1).replace("''", "'");
+        }
+        if (a == '"' && b == '"') {
+            final StringBuilder sb = new StringBuilder();
+            for (int i = 1; i < key.length() - 1; i++) {
+                final char c = key.charAt(i);
+                if (c != '\\' || i + 1 >= key.length() - 1) {
+                    sb.append(c);
+                    continue;
+                }
+                final char e = key.charAt(++i);
+                switch (e) {
+                    case 'n': sb.append('\n'); break;
+                    case 'r': sb.append('\r'); break;
+                    case 't': sb.append('\t'); break;
+                    case 'u':
+                        sb.append((char) Integer.parseInt(key.substring(i + 1, i + 5), 16));
+                        i += 4;
+                        break;
+                    default: sb.append(e); // \" and \\
+                }
+            }
+            return sb.toString();
         }
         return key;
     }

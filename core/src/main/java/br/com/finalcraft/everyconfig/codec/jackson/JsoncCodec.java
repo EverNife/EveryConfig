@@ -536,7 +536,11 @@ public final class JsoncCodec implements Codec, CommentAware {
 
     private static String unquoteJson(final String s) {
         if (s.length() >= 2 && s.charAt(0) == '"' && s.charAt(s.length() - 1) == '"') {
-            return s.substring(1, s.length() - 1).replace("\\\"", "\"").replace("\\\\", "\\");
+            try {
+                return DEFAULT.readValue(s, String.class); // every JSON escape, as the data pass reads it
+            } catch (final Exception e) {
+                return s; // not a well-formed string literal: the data pass reports it
+            }
         }
         return s;
     }
