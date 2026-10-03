@@ -13,6 +13,10 @@ Published artifacts, group `br.com.finalcraft.everyconfig`:
 
 ## [Unreleased]
 
+## [1.3.1]
+
+A key that is markup in its format - a PlaceholderAPI `%placeholder%` in YAML - survives a save and a reopen.
+
 ### Fixed
 
 - **A YAML key that is markup is written quoted.** The commented YAML writer emitted every key bare, so a key
