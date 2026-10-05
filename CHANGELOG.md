@@ -13,6 +13,10 @@ Published artifacts, group `br.com.finalcraft.everyconfig`:
 
 ## [Unreleased]
 
+## [1.4.1]
+
+A new file lists a bean's keys in the order the class declares them.
+
 ### Fixed
 
 - **A new file lists a bean's keys in declaration order when some of them are renamed.** Jackson writes every
