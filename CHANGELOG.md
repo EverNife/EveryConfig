@@ -13,6 +13,8 @@ Published artifacts, group `br.com.finalcraft.everyconfig`:
 
 ## [Unreleased]
 
+## [1.4.0]
+
 A collection of `@KeyIndex` entities is a keyed section as a bean field too, not only when written by path.
 
 ### Changed
