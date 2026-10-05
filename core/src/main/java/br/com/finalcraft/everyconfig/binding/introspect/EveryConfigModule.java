@@ -1,12 +1,14 @@
 package br.com.finalcraft.everyconfig.binding.introspect;
 
+import br.com.finalcraft.everyconfig.binding.merge.KeyIndexedContainers;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 
 /**
  * The Jackson module that teaches a mapper EveryConfig's binding behavior: the key-naming annotations
  * (via {@link EveryConfigAnnotationIntrospector}, inserted ahead of Jackson's own so native annotations
  * still resolve) and stable enum-by-name serialization (via {@link EnumNameSerializers}, which defers to a
- * {@code @JsonValue} enum's own form). Registered on every codec's mapper so the dynamic tree and typed
+ * {@code @JsonValue} enum's own form), and the key-major layout of a collection of {@code @KeyIndex}
+ * entities (via {@link KeyIndexedContainers}). Registered on every codec's mapper so the dynamic tree and typed
  * binding observe identical shapes. A type's own compact string form (via {@code @JsonValue}/
  * {@code @JsonCreator}) needs no registration here — Jackson honors it directly.
  */
@@ -23,5 +25,6 @@ public final class EveryConfigModule extends SimpleModule {
         super.setupModule(context);
         context.insertAnnotationIntrospector(new EveryConfigAnnotationIntrospector());
         context.addSerializers(new EnumNameSerializers());
+        KeyIndexedContainers.register(context);
     }
 }

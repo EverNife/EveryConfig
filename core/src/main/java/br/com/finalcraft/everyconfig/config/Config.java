@@ -7,6 +7,7 @@ import br.com.finalcraft.everyconfig.binding.BindOptions;
 import br.com.finalcraft.everyconfig.binding.BindResult;
 import br.com.finalcraft.everyconfig.binding.EntityBinder;
 import br.com.finalcraft.everyconfig.binding.merge.ElementStringList;
+import br.com.finalcraft.everyconfig.binding.merge.KeyIndexedContainers;
 import br.com.finalcraft.everyconfig.binding.merge.KeyIndexer;
 import br.com.finalcraft.everyconfig.binding.merge.LifecycleGraphWalker;
 import br.com.finalcraft.everyconfig.binding.merge.LifecycleInvoker;
@@ -1658,7 +1659,8 @@ public class Config implements AutoCloseable {
      * annotations). Every codec is Jackson-backed (exposes a mapper), so this is unconditional.
      */
     private void bindCoercionTo(final Codec codec) {
-        coercion.setPojoToNode(codec.getObjectMapper()::valueToTree);
+        final ObjectMapper mapper = codec.getObjectMapper();
+        coercion.setPojoToNode(value -> KeyIndexedContainers.toTree(mapper, value));
     }
 
     private void requireBackStore() {

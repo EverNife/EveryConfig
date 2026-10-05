@@ -438,7 +438,8 @@ self-describing codec reaches the typed reads and binding, not the untyped dynam
 
 A `Collection<T>` whose element carries a `@KeyIndex` field serializes as a section keyed by that field's
 value (it is omitted from the body; on read the section key is the sole authority). It is **automatic** —
-`setValue` and `getList` detect the `@KeyIndex` and use the keyed layout; there are no special methods.
+`setValue` and `getList` detect the `@KeyIndex` and use the keyed layout; there are no special methods. A
+`List`/`Set`/array field of a bound bean gets the same layout, so the block can carry a `@Comment`.
 
 ```java
 class Account { @KeyIndex String name; int balance; /* ... */ }

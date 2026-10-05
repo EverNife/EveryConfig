@@ -1,5 +1,4 @@
 package br.com.finalcraft.everyconfig.binding.merge;
-import br.com.finalcraft.everyconfig.annotation.KeyIndex;
 import br.com.finalcraft.everyconfig.binding.BindException;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.binding.schema.BindingNames;
@@ -8,6 +7,7 @@ import br.com.finalcraft.everyconfig.core.tree.DPath;
 import com.fasterxml.jackson.databind.BeanDescription;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationConfig;
 import com.fasterxml.jackson.databind.introspect.BeanPropertyDefinition;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -18,7 +18,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Converts between a collection of {@code @KeyIndex}-bearing entities and a key-major layout:
@@ -29,50 +28,53 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class KeyIndexer {
 
-    /** Whether each class declares a {@code @KeyIndex} field, resolved once per class — this is checked on
-     *  every {@code setValue}/{@code getList} of a collection, so it must not re-walk the hierarchy each time. */
-    private static final ConcurrentHashMap<Class<?>, Boolean> KEY_INDEXED = new ConcurrentHashMap<>();
-
     private KeyIndexer() {
     }
 
     /** True when {@code type} declares at least one {@code @KeyIndex} field — the signal that a collection of
      *  it serializes key-major. {@link #toIndexed} then validates there is exactly one. Cached per class. */
     public static boolean isKeyIndexed(final Class<?> type) {
-        return KEY_INDEXED.computeIfAbsent(type, KeyIndexer::scanIsKeyIndexed);
-    }
-
-    private static boolean scanIsKeyIndexed(final Class<?> type) {
-        for (final Field f : BindingNames.allFields(type)) {
-            if (f.isAnnotationPresent(KeyIndex.class)) {
-                return true;
-            }
-        }
-        return false;
+        return BindingNames.isKeyIndexed(type);
     }
 
     public static ObjectNode toIndexed(final Collection<?> collection, final ObjectMapper mapper) {
         final ObjectNode out = mapper.getNodeFactory().objectNode();
         for (final Object entity : collection) {
             final Field id = BindingNames.requireSingleKeyIndex(entity.getClass());
-            final Object idValue = read(id, entity);
-            final String key = idValue == null ? null : String.valueOf(idValue);
-            if (key == null || key.trim().isEmpty()) { // a blank id makes a useless/confusing section name
-                throw new BindException("@KeyIndex of " + entity.getClass().getSimpleName() + " is null or blank");
-            }
-            // Two elements sharing an id would silently collapse into one section; reject it instead.
+            final String key = sectionKey(entity, id);
             if (out.has(key)) {
-                throw new BindException("duplicate @KeyIndex value '" + key + "' in the collection of "
-                        + entity.getClass().getSimpleName() + "; @KeyIndex values must be unique");
+                throw duplicateKey(key, entity);
             }
             final JsonNode body = mapper.valueToTree(entity);
             if (body instanceof ObjectNode) {
                 // Strip the id under the SAME key the mapper emitted it as (the section key already carries it).
-                ((ObjectNode) body).remove(resolvedIdKey(entity.getClass(), id, mapper));
+                ((ObjectNode) body).remove(resolvedIdKey(entity.getClass(), id, mapper.getSerializationConfig()));
             }
             out.set(key, body);
         }
         return out;
+    }
+
+    /** The section name {@code entity} is stored under: its id, as text. */
+    static String sectionKey(final Object entity, final Field id) {
+        final Object idValue = read(id, entity);
+        final String key = idValue == null ? null : String.valueOf(idValue);
+        if (key == null || key.trim().isEmpty()) { // a blank id makes a useless/confusing section name
+            throw new BindException("@KeyIndex of " + entity.getClass().getSimpleName() + " is null or blank");
+        }
+        return key;
+    }
+
+    /** Two elements sharing an id would silently collapse into one section; this is the refusal instead. */
+    static BindException duplicateKey(final String key, final Object entity) {
+        return new BindException("duplicate @KeyIndex value '" + key + "' in the collection of "
+                + entity.getClass().getSimpleName() + "; @KeyIndex values must be unique");
+    }
+
+    /** Stamp {@code sectionKey} onto {@code entity}'s {@code @KeyIndex} field, cast to the field's type. */
+    static void assignId(final Object entity, final String sectionKey) {
+        final Field id = BindingNames.requireSingleKeyIndex(entity.getClass());
+        write(id, entity, castKey(sectionKey, id.getType()));
     }
 
     /**
@@ -113,9 +115,8 @@ public final class KeyIndexer {
     }
 
     /** The key the mapper actually emits the {@code @KeyIndex} field under, so the body strip matches it exactly. */
-    private static String resolvedIdKey(final Class<?> type, final Field idField,
-                                        final ObjectMapper mapper) {
-        final BeanDescription desc = mapper.getSerializationConfig().introspect(mapper.constructType(type));
+    static String resolvedIdKey(final Class<?> type, final Field idField, final SerializationConfig config) {
+        final BeanDescription desc = config.introspect(config.constructType(type));
         for (final BeanPropertyDefinition p : desc.findProperties()) {
             if (p.getField() != null && idField.equals(p.getField().getAnnotated())) {
                 return p.getName();
@@ -125,6 +126,16 @@ public final class KeyIndexer {
     }
 
     private static Object castKey(final String key, final Class<?> idType) {
+        try {
+            return parseKey(key, idType);
+        } catch (final IllegalArgumentException malformed) { // a NumberFormatException is one
+            throw new BindException("The section key '" + key + "' is not a valid " + idType.getSimpleName()
+                    + ", the type of the @KeyIndex field it names. Rename the section to a valid "
+                    + idType.getSimpleName() + ".", malformed);
+        }
+    }
+
+    private static Object parseKey(final String key, final Class<?> idType) {
         if (idType == String.class) {
             return key;
         }

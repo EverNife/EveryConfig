@@ -16,7 +16,8 @@ import java.util.List;
  * Merges a POJO-derived tree INTO the canonical tree, never replacing it. The POJO is the source of
  * truth for the keys it declares; everything else the canonical tree already holds survives. Nested
  * objects merge recursively; arrays and scalars are taken whole from the POJO (a list has no stable
- * identity to merge element-by-element). A key the canonical tree has but the POJO does not is handled
+ * identity to merge element-by-element). A key-major {@code @KeyIndex} collection does have one: each
+ * element merges into its own section, and a section whose element left the collection leaves with it. A key the canonical tree has but the POJO does not is handled
  * by the obsolete policy (kept, removed, or kept-and-deprecated) and only at a level the schema fully
  * owns — never inside a free-form map.
  */
@@ -51,6 +52,23 @@ public final class SmartMerge {
                         comments, childPath(pathPrefix, key), lossless);
             } else {
                 canonical.set(key, cand); // arrays, scalars, and mixed kinds -> the POJO value wins
+            }
+        }
+
+        if (schema.ownsMembership()) {
+            final List<String> gone = new ArrayList<>();
+            final Iterator<String> canonNames = canonical.fieldNames();
+            while (canonNames.hasNext()) {
+                final String key = canonNames.next();
+                if (!candidate.has(key)) {
+                    gone.add(key);
+                }
+            }
+            for (final String key : gone) {
+                canonical.remove(key);
+                if (comments != null) {
+                    comments.removeSubtree(childPath(pathPrefix, key)); // or it would greet a later namesake
+                }
             }
         }
 

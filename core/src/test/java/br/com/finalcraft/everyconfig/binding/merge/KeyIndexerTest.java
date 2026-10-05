@@ -4,13 +4,17 @@ import br.com.finalcraft.everyconfig.binding.BindException;
 import br.com.finalcraft.everyconfig.binding.LoadIssue;
 import br.com.finalcraft.everyconfig.codec.jackson.JsonCodec;
 import br.com.finalcraft.everyconfig.testdata.Dtos;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -23,6 +27,39 @@ class KeyIndexerTest {
 
     private final JsonCodec codec = new JsonCodec();
     private final ObjectMapper mapper = codec.getObjectMapper();
+
+    @Test
+    void mapperWritesAndReadsAKeyIndexFieldKeyMajorAtAnyDepth() throws Exception {
+        final Map<String, Dtos.KeyIndexOuterPojo> byName = new LinkedHashMap<>();
+        byName.put("first", new Dtos.KeyIndexOuterPojo());
+
+        final JsonNode tree = mapper.valueToTree(byName);
+        assertEquals(100, tree.at("/first/inner/accounts/alice/balance").asInt());
+        assertTrue(tree.at("/first/inner/accounts/alice/name").isMissingNode()); // the key carries the id
+        assertTrue(tree.at("/first/inner/scores").isArray());                    // empty: nothing to key by
+
+        final Map<String, Dtos.KeyIndexOuterPojo> back = mapper.readerFor(
+                mapper.getTypeFactory().constructMapType(LinkedHashMap.class, String.class,
+                        Dtos.KeyIndexOuterPojo.class)).readValue(tree);
+        assertEquals("bob", back.get("first").inner.accounts.get(1).name);
+        assertEquals(50, back.get("first").inner.accounts.get(1).balance);
+    }
+
+    @Test
+    void aNullElementOfAKeyIndexFieldIsRefused() {
+        final Dtos.KeyIndexHolderPojo holder = new Dtos.KeyIndexHolderPojo();
+        holder.accounts.add(null);
+        assertThrows(BindException.class, () -> KeyIndexedContainers.toTree(mapper, holder));
+    }
+
+    @Test
+    void aSectionWithNoBodyFailsNamingItsKey() {
+        final ObjectNode tree = mapper.createObjectNode();
+        tree.putObject("accounts").putNull("alice");
+        final JsonMappingException failure = assertThrows(JsonMappingException.class,
+                () -> mapper.treeToValue(tree, Dtos.KeyIndexHolderPojo.class));
+        assertEquals("alice", failure.getPath().get(failure.getPath().size() - 1).getFieldName());
+    }
 
     @Test
     void isKeyIndexedDetectsTheAnnotation() {

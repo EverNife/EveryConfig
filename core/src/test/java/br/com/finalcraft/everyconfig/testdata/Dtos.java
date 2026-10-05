@@ -33,11 +33,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -370,6 +373,28 @@ public final class Dtos {
         public String a;
         @KeyIndex
         public String b;
+    }
+
+    // ----- @KeyIndex collections as bean fields -----
+
+    /** One field per container kind and id type, each holding {@code @KeyIndex} entities. */
+    public static class KeyIndexHolderPojo {
+        @Comment("Each section is an account, named by its key.")
+        public List<KeyIndexAccountPojo> accounts = new ArrayList<KeyIndexAccountPojo>(Arrays.asList(
+                new KeyIndexAccountPojo("alice", 100), new KeyIndexAccountPojo("bob", 50)));
+        public Set<KeyIndexUuidPojo> nodes = new LinkedHashSet<KeyIndexUuidPojo>();
+        public KeyIndexIntPojo[] scores = new KeyIndexIntPojo[0];
+        public String title = "holder";
+    }
+
+    /** {@link KeyIndexHolderPojo} one level down, so its collections sit under a nested bean. */
+    public static class KeyIndexOuterPojo {
+        public KeyIndexHolderPojo inner = new KeyIndexHolderPojo();
+    }
+
+    /** A bean whose {@code @KeyIndex} collection field holds hook-bearing entities. */
+    public static class HookedKeyedOwnerPojo {
+        public List<HookedKeyedPojo> accounts = new ArrayList<HookedKeyedPojo>();
     }
 
     // ----- @PostLoad -----

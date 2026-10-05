@@ -6,6 +6,9 @@ import br.com.finalcraft.everyconfig.annotation.Key;
 import br.com.finalcraft.everyconfig.annotation.Section;
 import br.com.finalcraft.everyconfig.core.tree.DPath;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.type.ArrayType;
+import com.fasterxml.jackson.databind.type.CollectionType;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -34,7 +37,32 @@ public final class BindingNames {
      *  invalid one re-throws on every call (its failing scan is not cached). */
     private static final ConcurrentHashMap<Class<?>, Field> KEY_INDEX_FIELD = new ConcurrentHashMap<>();
 
+    /** Whether each class declares a {@code @KeyIndex} field, resolved once per class — this is asked on
+     *  every write and read of a collection, so it must not re-walk the hierarchy each time. */
+    private static final ConcurrentHashMap<Class<?>, Boolean> KEY_INDEXED = new ConcurrentHashMap<>();
+
     private BindingNames() {
+    }
+
+    /** True when {@code type} declares at least one {@code @KeyIndex} field. */
+    public static boolean isKeyIndexed(final Class<?> type) {
+        return KEY_INDEXED.computeIfAbsent(type, BindingNames::scanIsKeyIndexed);
+    }
+
+    private static boolean scanIsKeyIndexed(final Class<?> type) {
+        for (final Field f : allFields(type)) {
+            if (f.isAnnotationPresent(KeyIndex.class)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** True when {@code type} is a collection or array whose DECLARED element type carries {@code @KeyIndex}
+     *  — the containers a mapper stores key-major. */
+    public static boolean isKeyIndexedContainer(final JavaType type) {
+        return (type instanceof CollectionType || type instanceof ArrayType)
+                && isKeyIndexed(type.getContentType().getRawClass());
     }
 
     /** The on-disk key for a field: {@code @Key} (rename + case) first, then {@code @JsonProperty}, else the name. */

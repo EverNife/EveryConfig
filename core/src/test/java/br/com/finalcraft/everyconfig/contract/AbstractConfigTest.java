@@ -967,6 +967,263 @@ public abstract class AbstractConfigTest extends CodecMatrixTest {
     }
 
     // ============================================================================
+    //  @KeyIndex collection as a bean field
+    // ============================================================================
+
+    private static final UUID KEYED_NODE_ID = UUID.fromString("00000000-0000-0000-0000-000000000009");
+
+    /** The holder with every container filled: a String-keyed List, a UUID-keyed Set, an int-keyed array. */
+    private static Dtos.KeyIndexHolderPojo filledKeyIndexHolder() {
+        final Dtos.KeyIndexHolderPojo holder = new Dtos.KeyIndexHolderPojo();
+        holder.nodes.add(new Dtos.KeyIndexUuidPojo(KEYED_NODE_ID, "n1"));
+        holder.scores = new Dtos.KeyIndexIntPojo[]{new Dtos.KeyIndexIntPojo(7, 70L), new Dtos.KeyIndexIntPojo(9, 90L)};
+        return holder;
+    }
+
+    private static List<String> accountNames(final Collection<Dtos.KeyIndexAccountPojo> accounts) {
+        final List<String> names = new ArrayList<>();
+        for (final Dtos.KeyIndexAccountPojo account : accounts) {
+            names.add(account.name);
+        }
+        return names;
+    }
+
+    @Test
+    @Order(79)
+    @DisplayName("[base] a root bean's @KeyIndex List/Set/array fields are stored key-major and re-save unchanged")
+    void keyIndexField_rootBean_roundTripsKeyMajor() throws IOException {
+        final Config c = open();
+        c.getOrMergeValue("", filledKeyIndexHolder());
+        c.save();
+        final String written = readText();
+
+        final Config r = open();
+        assertEquals(100, r.getInt("accounts.alice.balance"));   // String id, List
+        assertFalse(r.contains("accounts.alice.name"));          // the id lives only in the section key
+        assertEquals("n1", r.getString("nodes." + KEYED_NODE_ID + ".label")); // UUID id, Set
+        assertEquals(90, r.getInt("scores.9.score"));            // int id, array
+        if (supportsComments()) {
+            assertEquals("Each section is an account, named by its key.", r.getComment("accounts"));
+        }
+
+        final Dtos.KeyIndexHolderPojo back = r.getOrMergeValue("", new Dtos.KeyIndexHolderPojo());
+        assertEquals(Arrays.asList("alice", "bob"), accountNames(back.accounts));
+        assertEquals(50, back.accounts.get(1).balance);
+        assertEquals(1, back.nodes.size());
+        assertEquals(KEYED_NODE_ID, back.nodes.iterator().next().id);
+        assertEquals(2, back.scores.length);
+        assertEquals(7, back.scores[0].id);
+        assertEquals(70L, back.scores[0].score);
+
+        r.save();
+        assertEquals(written, readText()); // reading and re-saving moved nothing
+    }
+
+    @Test
+    @Order(79)
+    @DisplayName("[base] @KeyIndex field: the file's sections win over the bean's default elements")
+    void keyIndexField_fileWinsOverDefaultElements() {
+        final Dtos.KeyIndexHolderPojo first = new Dtos.KeyIndexHolderPojo();
+        first.accounts = new ArrayList<>(Arrays.asList(
+                new Dtos.KeyIndexAccountPojo("alice", 1), new Dtos.KeyIndexAccountPojo("carol", 3)));
+        final Config c = open();
+        c.setValue("", first);
+        c.save();
+
+        final Config r = open();
+        final Dtos.KeyIndexHolderPojo back = r.getOrMergeValue("", new Dtos.KeyIndexHolderPojo()); // alice=100, bob=50
+        assertEquals(Arrays.asList("alice", "carol"), accountNames(back.accounts));
+        assertEquals(1, back.accounts.get(0).balance);
+        assertFalse(r.contains("accounts.bob")); // a default element the file never had is not brought back
+    }
+
+    @Test
+    @Order(79)
+    @DisplayName("[base] @KeyIndex field of a nested bean: setValue writes it key-major; getValue and getValueInto read it")
+    void keyIndexField_nestedBean_roundTrips() {
+        final Dtos.KeyIndexOuterPojo outer = new Dtos.KeyIndexOuterPojo();
+        outer.inner = filledKeyIndexHolder();
+        final Config c = open();
+        c.setValue("outer", outer);
+        assertEquals(50, c.getInt("outer.inner.accounts.bob.balance"));
+        assertEquals(70, c.getInt("outer.inner.scores.7.score"));
+        c.save();
+
+        final Config r = open();
+        final Dtos.KeyIndexOuterPojo viaGet = r.getValue("outer", Dtos.KeyIndexOuterPojo.class);
+        assertEquals(Arrays.asList("alice", "bob"), accountNames(viaGet.inner.accounts));
+        assertEquals(KEYED_NODE_ID, viaGet.inner.nodes.iterator().next().id);
+
+        final Dtos.KeyIndexOuterPojo viaInto = r.getValueInto("outer", new Dtos.KeyIndexOuterPojo());
+        assertEquals(9, viaInto.inner.scores[1].id);
+        assertEquals(90L, viaInto.inner.scores[1].score);
+    }
+
+    @Test
+    @Order(79)
+    @DisplayName("[base] @KeyIndex field: mergeValue merges each element's section and drops the section of a removed element")
+    void keyIndexField_mergeOwnsMembership() {
+        final Dtos.KeyIndexHolderPojo holder = new Dtos.KeyIndexHolderPojo();
+        final Config c = open();
+        c.mergeValue("cfg", holder);
+        c.setValue("cfg.accounts.alice.note", "hand-written"); // a key the entity does not declare
+
+        holder.accounts.remove(1);                              // bob leaves the collection
+        holder.accounts.add(new Dtos.KeyIndexAccountPojo("carol", 3));
+        holder.accounts.get(0).balance = 101;
+        c.mergeValue("cfg", holder);
+        assertFalse(c.contains("cfg.accounts.bob"));
+        assertEquals(101, c.getInt("cfg.accounts.alice.balance"));
+        assertEquals("hand-written", c.getString("cfg.accounts.alice.note")); // merged, not replaced
+        assertEquals(3, c.getInt("cfg.accounts.carol.balance"));
+
+        c.setValue("cfg", holder);                              // the override clears the subtree first
+        assertFalse(c.contains("cfg.accounts.alice.note"));
+        assertEquals(101, c.getInt("cfg.accounts.alice.balance"));
+    }
+
+    @Test
+    @Order(79)
+    @DisplayName("[base] @KeyIndex field: an empty collection is a plain empty array, and turns key-major once it has an element")
+    void keyIndexField_emptyCollection() {
+        final Dtos.KeyIndexHolderPojo holder = new Dtos.KeyIndexHolderPojo();
+        holder.accounts = new ArrayList<>();
+        final Config c = open();
+        c.setValue("cfg", holder);
+        c.save();
+
+        final Config r = open();
+        assertTrue(r.getNode("cfg.accounts").isArray(), "expected an empty array, got: " + r.getNode("cfg.accounts"));
+        final Dtos.KeyIndexHolderPojo back = r.getValue("cfg", Dtos.KeyIndexHolderPojo.class);
+        assertTrue(back.accounts.isEmpty());
+        assertTrue(back.nodes.isEmpty());
+        assertEquals(0, back.scores.length);
+
+        back.accounts.add(new Dtos.KeyIndexAccountPojo("zoe", 9));
+        r.mergeValue("cfg", back);
+        r.save();
+        assertEquals(9, open().getInt("cfg.accounts.zoe.balance"));
+    }
+
+    @Test
+    @Order(79)
+    @DisplayName("[base] @KeyIndex field stored as a plain array still reads; the next binding write turns it key-major")
+    void keyIndexField_plainArrayReadsThenMigrates() {
+        final Map<String, Object> row = new LinkedHashMap<>();
+        row.put("name", "alice"); // the id carried in the body, as a plain list of objects stores it
+        row.put("balance", 100);
+        final Config c = open();
+        c.setValue("cfg.accounts", Arrays.asList(row));
+        c.save();
+
+        final Config r = open();
+        assertTrue(r.getNode("cfg.accounts").isArray());
+        final BindResult<Dtos.KeyIndexHolderPojo> read =
+                r.bind(Dtos.KeyIndexHolderPojo.class, codec).readResult("cfg");
+        assertFalse(read.hasIssues());
+        assertEquals(Arrays.asList("alice"), accountNames(read.value().accounts));
+        assertEquals(100, read.value().accounts.get(0).balance);
+
+        r.mergeValue("cfg", read.value());
+        assertTrue(r.getNode("cfg.accounts").isObject());
+        assertEquals(100, r.getInt("cfg.accounts.alice.balance"));
+        assertFalse(r.contains("cfg.accounts.alice.name"));
+    }
+
+    @Test
+    @Order(79)
+    @DisplayName("[base] @KeyIndex field: a section that does not bind is one named issue, its siblings still read")
+    void keyIndexField_unbindableEntriesAreIsolated() {
+        final Config c = open();
+        c.setValue("cfg.accounts.alice.balance", 7);
+        c.setValue("cfg.accounts.bob.balance", "NaN");            // one bad leaf inside an entry
+        c.setValue("cfg.accounts.enabled", Arrays.asList(true));  // a key that is no account at all
+        c.setValue("cfg.nodes.not-a-uuid.label", "broken");       // a key the id type cannot take
+
+        final BindResult<Dtos.KeyIndexHolderPojo> read =
+                c.bind(Dtos.KeyIndexHolderPojo.class, codec).readResult("cfg");
+        assertEquals(Arrays.asList("alice", "bob"), accountNames(read.value().accounts));
+        assertEquals(7, read.value().accounts.get(0).balance);
+        assertEquals(0, read.value().accounts.get(1).balance);    // only the bad field fell back to its default
+        assertTrue(read.value().nodes.isEmpty());
+        final Set<String> issueKeys = new HashSet<>();
+        for (final LoadIssue issue : read.issues()) {
+            issueKeys.add(issue.key());
+        }
+        assertEquals(new HashSet<>(Arrays.asList("accounts.bob.balance", "accounts.enabled", "nodes.not-a-uuid")),
+                issueKeys);
+
+        assertThrows(BindException.class, () -> c.bind(Dtos.KeyIndexHolderPojo.class, codec,
+                BindOptions.defaults().withCoercion(BindOptions.Coercion.STRICT)).read("cfg"));
+
+        // The read left the tree alone; writing the bean back is what drops the sections it could not hold.
+        assertTrue(c.contains("cfg.accounts.enabled"));
+        c.mergeValue("cfg", read.value());
+        assertFalse(c.contains("cfg.accounts.enabled"));
+        assertFalse(c.contains("cfg.nodes.not-a-uuid"));
+    }
+
+    @Test
+    @Order(79)
+    @DisplayName("[base] @KeyIndex field: the section key is the id authority over a stray id in the body")
+    void keyIndexField_sectionKeyWinsOverBodyId() {
+        final Config c = open();
+        c.setValue("cfg.accounts.alice.name", "WRONG");
+        c.setValue("cfg.accounts.alice.balance", 7);
+
+        final Dtos.KeyIndexHolderPojo back = c.getValue("cfg", Dtos.KeyIndexHolderPojo.class);
+        assertEquals(Arrays.asList("alice"), accountNames(back.accounts));
+        assertEquals(7, back.accounts.get(0).balance);
+    }
+
+    @Test
+    @Order(79)
+    @DisplayName("[base] @KeyIndex field: a duplicate or blank id is refused when the bean is written")
+    void keyIndexField_duplicateOrBlankId_throws() {
+        final Config c = open();
+        final Dtos.KeyIndexHolderPojo duplicated = new Dtos.KeyIndexHolderPojo();
+        duplicated.accounts.add(new Dtos.KeyIndexAccountPojo("alice", 2));
+        assertThrows(BindException.class, () -> c.setValue("cfg", duplicated));
+        assertThrows(BindException.class, () -> c.mergeValue("cfg", duplicated));
+
+        final Dtos.KeyIndexHolderPojo blank = new Dtos.KeyIndexHolderPojo();
+        blank.accounts.add(new Dtos.KeyIndexAccountPojo("  ", 2));
+        assertThrows(BindException.class, () -> c.getOrMergeValue("cfg", blank));
+    }
+
+    @Test
+    @Order(79)
+    @DisplayName("[lifecycle] @KeyIndex field: each element's hooks fire at owner.field.<id>, or field[i] while it is a plain array")
+    void keyIndexField_elementHooksFireAtIdPaths() {
+        final Dtos.HookedKeyedOwnerPojo owner = new Dtos.HookedKeyedOwnerPojo();
+        final Dtos.HookedKeyedPojo x = new Dtos.HookedKeyedPojo("alpha", 10, "eA");
+        final Dtos.HookedKeyedPojo y = new Dtos.HookedKeyedPojo("beta", 20, "eB");
+        owner.accounts.add(x);
+        owner.accounts.add(y);
+        final Config c = open();
+        c.setValue("owner", owner);
+        assertTrue(x.fires.contains("postSave@owner.accounts.alpha"), x.fires.toString());
+        assertTrue(y.fires.contains("postSave@owner.accounts.beta"), y.fires.toString());
+        c.save();
+
+        final Config r = open();
+        final Dtos.HookedKeyedOwnerPojo read = r.getValue("owner", Dtos.HookedKeyedOwnerPojo.class);
+        assertEquals(2, read.accounts.size());
+        final Dtos.HookedKeyedPojo alpha = read.accounts.get(0);
+        assertEquals("alpha", alpha.id);
+        assertEquals("eA", alpha.extra); // read by postLoad through its own section
+        assertTrue(alpha.fires.contains("postLoad@owner.accounts.alpha"), alpha.fires.toString());
+
+        final Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", "gamma");
+        row.put("value", 1);
+        r.setValue("legacy.accounts", Arrays.asList(row));
+        final Dtos.HookedKeyedOwnerPojo legacy = r.getValue("legacy", Dtos.HookedKeyedOwnerPojo.class);
+        assertTrue(legacy.accounts.get(0).fires.contains("postLoad@legacy.accounts[0]"),
+                legacy.accounts.get(0).fires.toString());
+    }
+
+    // ============================================================================
     //  Lifecycle / files
     // ============================================================================
 

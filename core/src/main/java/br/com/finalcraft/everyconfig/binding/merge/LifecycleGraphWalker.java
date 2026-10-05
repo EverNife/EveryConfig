@@ -11,13 +11,14 @@ import br.com.finalcraft.everyconfig.core.coerce.TypeFamily;
 import br.com.finalcraft.everyconfig.core.tree.DPath;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 
-import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -38,10 +39,10 @@ import java.util.logging.Logger;
  *
  * <p>Sub-path grammar mirrors how the value lands in the tree: a field is its owner path plus the field's
  * on-disk key ({@code @Key}/{@code @Section}-aware); a {@code Map} value is {@code owner.<key>}; a collection
- * or array element is {@code owner[i]}. The {@code @KeyIndex}/compact-element collection layouts are a
- * top-level dynamic-collection concern (a nested {@code List<T>} field serializes plain via the mapper), so
- * they live only in the {@code Config} seam ({@link #fireCollectionElements}/{@link #warnCompactHooks}), not
- * in the graph descent.
+ * or array element is {@code owner[i]}, or {@code owner.<id>} for a {@code @KeyIndex} entity stored
+ * key-major. The compact-element layout is a top-level dynamic-collection concern (a nested {@code List<T>}
+ * field of such a type serializes rich via the mapper), so it lives only in the {@code Config} seam
+ * ({@link #warnCompactHooks}), not in the graph descent.
  *
  * <p>The walk stops at a value the config's {@link ObjectMapper} does NOT serialize as an object of fields —
  * a type a Jackson module owns, written as one scalar node. Such a value has no sub-tree, hence no sub-path
@@ -226,20 +227,26 @@ public final class LifecycleGraphWalker {
                 visit(e.getValue(), DPath.joinSegment(path, String.valueOf(e.getKey())));
             }
         } else if (value instanceof Collection) {
-            int i = 0;
-            for (final Object element : (Collection<?>) value) {
-                visit(element, indexPath(path, i));
-                i++;
-            }
-        } else if (c.isArray()) {
-            final int n = Array.getLength(value);
-            for (int i = 0; i < n; i++) {
-                visit(Array.get(value, i), indexPath(path, i));
-            }
+            visitElements((Collection<?>) value, path);
+        } else if (value instanceof Object[]) {
+            visitElements(Arrays.asList((Object[]) value), path);
         } else if (TypeFamily.isUserPojoType(c) && !writesNoFieldSubTree(c)) {
             descendFields(value, c, path);
         }
         // anything else (scalar/enum/JDK leaf) has no children the mapper serialized as a sub-tree
+    }
+
+    /** Visit each element where it lives in the tree: {@code path.<id>} for a {@code @KeyIndex} entity, unless
+     *  the node at {@code path} is still a plain array (a file written before the key-major layout, or a
+     *  container whose declared element type did not reveal the id), where it is {@code path[i]}. */
+    private void visitElements(final Collection<?> elements, final String path) {
+        final boolean plainArray = config != null && config.getNode(path) instanceof ArrayNode;
+        int i = 0;
+        for (final Object element : elements) {
+            final boolean keyed = !plainArray && element != null && KeyIndexer.isKeyIndexed(element.getClass());
+            visit(element, keyed ? keyIndexedPath(path, element) : indexPath(path, i));
+            i++;
+        }
     }
 
     /** Descend into the serialized fields of a user POJO. Fields the mapper does not emit (static/transient/

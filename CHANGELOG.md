@@ -13,6 +13,28 @@ Published artifacts, group `br.com.finalcraft.everyconfig`:
 
 ## [Unreleased]
 
+A collection of `@KeyIndex` entities is a keyed section as a bean field too, not only when written by path.
+
+### Changed
+
+- **A bean's `List`/`Set`/array field of a `@KeyIndex` type is stored key-major.** The keyed layout existed
+  only on the path API (`setValue("kits", list)` / `getList`); the same type as a field of a bound bean went to
+  the file as a plain list, so a block of named entries could not live in the settings bean with a `@Comment`
+  on it. The mapper now writes such a field as a section per element, keyed by the id and with the id left out
+  of the body, at any depth the mapper reaches (a nested bean, a bean inside a `Map` value), and reads it back
+  from there. It is by type, as on the path - no opt-in annotation. An empty collection is still `[]`.
+- **A field already stored as a plain list still reads, and the next binding write turns it into the keyed
+  section.** Nothing changes for such a file until the bean is written back (`mergeValue`, `setValue`,
+  `getOrMergeValue`) and saved; from then on the layout is the keyed one.
+- **The collection owns the section's membership.** On a merge each element merges into its own section (a key
+  the entity does not declare survives inside it), and the section of an element that left the collection is
+  removed with its comments. A section the read could not bind is therefore dropped by the next binding write.
+- **A section that does not bind is one `LoadIssue` at `field.<key>`**, or at `field.<key>.<leaf>` when only one
+  value inside it is bad, and its siblings still read; `Coercion.STRICT` throws. A stray id inside a body loses
+  to the section key without an issue (the path API's `getListResult` still reports it).
+- **Element hooks fire at `owner.field.<id>`** for such a field, and at `owner.field[i]` while the file still
+  holds the plain list.
+
 ## [1.3.1]
 
 A key that is markup in its format - a PlaceholderAPI `%placeholder%` in YAML - survives a save and a reopen.

@@ -39,6 +39,9 @@ public final class SchemaCache {
     }
 
     private Schema build(final JavaType type) {
+        if (BindingNames.isKeyIndexedContainer(type)) {
+            return new KeyedCollectionSchema(this, type.getContentType());
+        }
         if (isOpen(type)) {
             return Schema.OPEN;
         }

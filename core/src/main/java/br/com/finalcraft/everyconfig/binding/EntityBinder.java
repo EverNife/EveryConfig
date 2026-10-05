@@ -1,4 +1,5 @@
 package br.com.finalcraft.everyconfig.binding;
+import br.com.finalcraft.everyconfig.binding.merge.KeyIndexedContainers;
 import br.com.finalcraft.everyconfig.binding.merge.LifecycleGraphWalker;
 import br.com.finalcraft.everyconfig.binding.merge.LifecycleInvoker;
 import br.com.finalcraft.everyconfig.binding.merge.SerializedShape;
@@ -320,7 +321,7 @@ public final class EntityBinder<T> {
     }
 
     private void mergeAndSeed(final T pojo, final ObjectNode target, final String basePath) {
-        final JsonNode candidate = mapper.valueToTree(pojo);
+        final JsonNode candidate = KeyIndexedContainers.toTree(mapper, pojo);
         if (!(candidate instanceof ObjectNode)) {
             throw new BindException("entity " + pojo.getClass().getName() + " did not serialize to an object");
         }
