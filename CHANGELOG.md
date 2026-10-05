@@ -13,6 +13,16 @@ Published artifacts, group `br.com.finalcraft.everyconfig`:
 
 ## [Unreleased]
 
+### Fixed
+
+- **A new file lists a bean's keys in declaration order when some of them are renamed.** Jackson writes every
+  renamed property after the ones that kept their name, so in a bean mixing `@Key`/`@JsonProperty` fields
+  with plain ones the plain fields came first whatever the class said - a plain `kits` field declared last
+  was written above two `@Key` sections declared before it. A type with a renamed field now gets its
+  declaration order (superclass fields first); a type's own `@JsonPropertyOrder` still wins. An existing file
+  keeps its order: only keys the file does not have yet are affected, and they are still appended after the
+  file's own keys.
+
 ## [1.4.0]
 
 A collection of `@KeyIndex` entities is a keyed section as a bean field too, not only when written by path.

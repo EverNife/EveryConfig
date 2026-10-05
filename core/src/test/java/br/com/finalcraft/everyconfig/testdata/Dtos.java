@@ -397,6 +397,32 @@ public final class Dtos {
         public List<HookedKeyedPojo> accounts = new ArrayList<HookedKeyedPojo>();
     }
 
+    // ----- declaration order across renamed and plain fields -----
+
+    public static class OrderLeafPojo {
+        public int value = 1;
+    }
+
+    /** Renamed fields interleaved with plain ones: a {@code @KeyIndex} collection in the middle and one at
+     *  the end. Every field is a section, so no codec regroups them by kind. */
+    public static class DeclarationOrderPojo {
+        @Key("general-settings")
+        public OrderLeafPojo general = new OrderLeafPojo();
+        public List<KeyIndexAccountPojo> middle = new ArrayList<KeyIndexAccountPojo>(Arrays.asList(
+                new KeyIndexAccountPojo("m1", 1)));
+        @Key("block-history")
+        public OrderLeafPojo blockHistory = new OrderLeafPojo();
+        public List<KeyIndexAccountPojo> last = new ArrayList<KeyIndexAccountPojo>(Arrays.asList(
+                new KeyIndexAccountPojo("l1", 1)));
+    }
+
+    /** {@link DeclarationOrderPojo} under a renamed field that is declared before a plain one. */
+    public static class DeclarationOrderOuterPojo {
+        @Key("the-inner")
+        public DeclarationOrderPojo inner = new DeclarationOrderPojo();
+        public OrderLeafPojo tail = new OrderLeafPojo();
+    }
+
     // ----- @PostLoad -----
 
     /** No-arg {@code @PostLoad}. */

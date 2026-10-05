@@ -1224,6 +1224,53 @@ public abstract class AbstractConfigTest extends CodecMatrixTest {
     }
 
     // ============================================================================
+    //  Declaration order of a bean's keys
+    // ============================================================================
+
+    private static final List<String> DECLARED_ORDER =
+            Arrays.asList("general-settings", "middle", "block-history", "last");
+
+    @Test
+    @Order(79)
+    @DisplayName("[base] a new file lists a root bean's keys in declaration order, renamed and @KeyIndex fields alike")
+    void declarationOrder_rootBean_newFile() {
+        final Config c = open();
+        c.getOrMergeValue("", new Dtos.DeclarationOrderPojo());
+        assertEquals(DECLARED_ORDER, new ArrayList<>(c.getKeys()));
+        c.save();
+        assertEquals(DECLARED_ORDER, new ArrayList<>(open().getKeys()));
+    }
+
+    @Test
+    @Order(79)
+    @DisplayName("[base] a new file lists a nested bean's keys in declaration order")
+    void declarationOrder_nestedBean_newFile() {
+        final Config c = open();
+        c.setValue("outer", new Dtos.DeclarationOrderOuterPojo());
+        c.save();
+
+        final Config r = open();
+        assertEquals(Arrays.asList("the-inner", "tail"), new ArrayList<>(r.getKeys("outer")));
+        assertEquals(DECLARED_ORDER, new ArrayList<>(r.getKeys("outer.the-inner")));
+    }
+
+    @Test
+    @Order(79)
+    @DisplayName("[base] keys seeded into an existing file follow the file's own keys, in declaration order among themselves")
+    void declarationOrder_seededIntoExistingFile() {
+        final Config c = open();
+        c.setValue("block-history.value", 5);
+        c.setValue("custom.value", 9);
+        c.save();
+
+        final Config r = open();
+        r.getOrMergeValue("", new Dtos.DeclarationOrderPojo());
+        r.save();
+        assertEquals(Arrays.asList("block-history", "custom", "general-settings", "middle", "last"),
+                new ArrayList<>(open().getKeys()));
+    }
+
+    // ============================================================================
     //  Lifecycle / files
     // ============================================================================
 
