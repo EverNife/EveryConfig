@@ -13,6 +13,10 @@ Published artifacts, group `br.com.finalcraft.everyconfig`:
 
 ## [Unreleased]
 
+## [1.4.2]
+
+`hasBeenModified()` no longer misses a same-size edit made within the same clock tick.
+
 ### Fixed
 
 - **`hasBeenModified()` sees a same-size edit made within the same clock tick.** It compared only the file's
