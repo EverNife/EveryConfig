@@ -1,5 +1,7 @@
 package br.com.finalcraft.everyconfig.io.watcher;
 
+import java.util.zip.CRC32;
+
 /**
  * Immutable (mtime, size) tuple, optionally carrying a content hash. An absent file is {@code (0, -1)}.
  * The hash is {@link #NO_HASH} for the cheap stat-only fingerprint and a real CRC32 when content was
@@ -27,6 +29,13 @@ public final class Fingerprint {
         this.mtime = mtime;
         this.size = size;
         this.hash = hash;
+    }
+
+    /** The content hash a fingerprint carries for {@code data}: a CRC32 over the raw bytes. */
+    public static long contentHash(final byte[] data) {
+        final CRC32 crc = new CRC32();
+        crc.update(data, 0, data.length);
+        return crc.getValue();
     }
 
     @Override

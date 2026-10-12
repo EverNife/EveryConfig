@@ -13,6 +13,14 @@ Published artifacts, group `br.com.finalcraft.everyconfig`:
 
 ## [Unreleased]
 
+### Fixed
+
+- **`hasBeenModified()` sees a same-size edit made within the same clock tick.** It compared only the file's
+  modification time and size, so another writer that saved content of the same length right after this
+  config read or wrote the file - quick enough to get the same timestamp - went unnoticed and the config kept
+  its stale values. When the file's timestamp is that recent, the check now also compares the content with
+  what was last read or written; an older timestamp is still trusted without touching the file.
+
 ## [1.4.1]
 
 A new file lists a bean's keys in the order the class declares them.

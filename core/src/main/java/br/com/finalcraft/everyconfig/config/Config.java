@@ -59,6 +59,7 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -84,7 +85,7 @@ public class Config implements AutoCloseable {
     private final ReentrantLock lock = new ReentrantLock(true);
     private BackStore backStore;
     private Codec codec;
-    private volatile Fingerprint loaded = Fingerprint.ABSENT;
+    private final AtomicReference<SeenOnDisk> loaded = new AtomicReference<>(new SeenOnDisk(Fingerprint.ABSENT, 0L));
     private volatile LoadStatus lastLoadStatus = LoadStatus.NEVER_LOADED;
     private boolean dirty = false;
     private Watcher watcher;
@@ -1670,6 +1671,7 @@ public class Config implements AutoCloseable {
     }
 
     private void loadInternal(final boolean backupOnParseFail) {
+        final long readAt = System.currentTimeMillis();
         byte[] bytes;
         try {
             bytes = backStore.readBytes();
@@ -1691,7 +1693,7 @@ public class Config implements AutoCloseable {
                 lastLoadStatus = LoadStatus.PARSE_FAILED_BACKED_UP;
             }
         }
-        loaded = backStore.fingerprint();
+        loaded.set(SeenOnDisk.read(backStore.fingerprint(), bytes, readAt));
     }
 
     private void decodeInto(final byte[] bytes) {
@@ -1773,8 +1775,10 @@ public class Config implements AutoCloseable {
     private void doSave(final Codec codec, final Charset charset) {
         lock.lock();
         try {
-            final Fingerprint written = backStore.writeAtomic(encodeWith(codec, charset));
-            loaded = written;
+            final byte[] bytes = encodeWith(codec, charset);
+            final long writtenAt = System.currentTimeMillis();
+            final Fingerprint written = backStore.writeAtomic(bytes);
+            loaded.set(new SeenOnDisk(written, writtenAt));
             if (watcher != null) {
                 watcher.refreshSnapshot(written);
             }
@@ -1825,10 +1829,11 @@ public class Config implements AutoCloseable {
                 lastLoadStatus = LoadStatus.ABSENT;
                 return;
             }
+            final long readAt = System.currentTimeMillis();
             final byte[] bytes = backStore.readBytes();
             try {
                 decodeInto(bytes);
-                loaded = backStore.fingerprint();
+                loaded.set(SeenOnDisk.read(backStore.fingerprint(), bytes, readAt));
                 lastLoadStatus = LoadStatus.OK;
             } catch (final CodecException parseFail) {
                 lastLoadStatus = LoadStatus.PARSE_FAILED_KEPT;
@@ -1841,12 +1846,67 @@ public class Config implements AutoCloseable {
     }
 
     public long getLastModified() {
-        return loaded.mtime;
+        return loaded.get().fingerprint.mtime;
     }
 
-    /** True if the durable file's fingerprint differs from what was last loaded/saved. */
+    /**
+     * True if the durable file differs from what was last loaded/saved. A changed (mtime, size) answers
+     * without I/O; an unchanged one is trusted too, unless the file's stamp is recent enough that a
+     * same-size edit could share its clock tick — only then is the content read and compared.
+     */
     public boolean hasBeenModified() {
-        return backStore != null && !backStore.fingerprint().equals(loaded);
+        if (backStore == null) {
+            return false;
+        }
+        final SeenOnDisk seen = loaded.get();
+        if (!backStore.fingerprint().equals(seen.fingerprint)) {
+            return true;
+        }
+        if (!seen.isRacy()) {
+            return false;
+        }
+        final long readAt = System.currentTimeMillis();
+        final byte[] bytes;
+        try {
+            bytes = backStore.readBytes();
+        } catch (final IOException e) {
+            return true; //unverifiable; let the caller's reload surface the failure
+        }
+        if (bytes == null || Fingerprint.contentHash(bytes) != seen.fingerprint.hash) {
+            return true;
+        }
+        //content confirmed as of readAt; once the stamp ages past the window, the stat alone suffices again
+        loaded.compareAndSet(seen, new SeenOnDisk(seen.fingerprint, readAt));
+        return false;
+    }
+
+    /** The fingerprint of the content last read or written, and when that happened. */
+    private static final class SeenOnDisk {
+
+        /** The coarsest common mtime granularity (FAT's 2s), which also covers a stamp truncated to seconds. */
+        private static final long RACY_WINDOW_MS = 2_000L;
+
+        final Fingerprint fingerprint;
+        final long seenAt;
+
+        SeenOnDisk(final Fingerprint fingerprint, final long seenAt) {
+            this.fingerprint = fingerprint;
+            this.seenAt = seenAt;
+        }
+
+        /** {@code stat} taken after reading {@code bytes}, so the hash is of what was actually decoded. */
+        static SeenOnDisk read(final Fingerprint stat, final byte[] bytes, final long readAt) {
+            if (bytes == null) {
+                return new SeenOnDisk(stat, readAt);
+            }
+            return new SeenOnDisk(new Fingerprint(stat.mtime, stat.size, Fingerprint.contentHash(bytes)), readAt);
+        }
+
+        /** True when the file was stamped within one mtime tick of {@link #seenAt}: a later same-size edit
+         *  may then carry the very same stamp, so an equal (mtime, size) proves nothing. */
+        boolean isRacy() {
+            return fingerprint.hash != Fingerprint.NO_HASH && fingerprint.mtime >= seenAt - RACY_WINDOW_MS;
+        }
     }
 
     public LoadStatus lastLoadStatus() {

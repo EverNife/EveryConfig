@@ -96,7 +96,7 @@ final class FilePollWatcher implements Watcher {
                     return new Fingerprint(mtime, size);
                 }
                 // Hash the content so a same-size edit within one coarse mtime tick is still seen as a change.
-                return new Fingerprint(mtime, size, AtomicFileBackStore.crc32(Files.readAllBytes(filePath)));
+                return new Fingerprint(mtime, size, Fingerprint.contentHash(Files.readAllBytes(filePath)));
             }
         } catch (final IOException ignored) {
             // best-effort; treat as absent
